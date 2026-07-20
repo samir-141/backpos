@@ -1,0 +1,473 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+  moduleFormat    = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model cajas {
+  id               String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  sucursal_id      String             @db.Uuid
+  nombre           String             @db.VarChar(50)
+  estado           String             @default("CERRADA") @db.VarChar(20)
+  created_at       DateTime?          @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?          @default(now()) @db.Timestamptz(6)
+  deleted_at       DateTime?          @db.Timestamptz(6)
+  sucursales       sucursales         @relation(fields: [sucursal_id], references: [id], onUpdate: NoAction)
+  movimientos_caja movimientos_caja[]
+  ventas           ventas[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model categorias {
+  id                    String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  nombre                String                  @unique @db.VarChar(100)
+  created_at            DateTime?               @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime?               @default(now()) @db.Timestamptz(6)
+  deleted_at            DateTime?               @db.Timestamptz(6)
+  productos_comerciales productos_comerciales[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model clientes {
+  id               String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  tipo_documento   String    @db.VarChar(10)
+  numero_documento String    @db.VarChar(20)
+  nombre           String    @db.VarChar(150)
+  direccion        String?
+  telefono         String?   @db.VarChar(20)
+  email            String?   @db.VarChar(100)
+  created_at       DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime? @default(now()) @db.Timestamptz(6)
+  deleted_at       DateTime? @db.Timestamptz(6)
+  ventas           ventas[]
+
+  @@unique([tipo_documento, numero_documento], map: "uq_documento_cliente")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model compras {
+  id               String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  proveedor_id     String             @db.Uuid
+  usuario_id       String             @db.Uuid
+  sucursal_id      String             @db.Uuid
+  fecha            DateTime           @default(now()) @db.Timestamptz(6)
+  serie            String             @db.VarChar(10)
+  numero           String             @db.VarChar(20)
+  subtotal         Decimal            @db.Decimal(12, 4)
+  igv              Decimal            @db.Decimal(12, 4)
+  total            Decimal            @db.Decimal(12, 4)
+  created_at       DateTime?          @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime?          @default(now()) @db.Timestamptz(6)
+  deleted_at       DateTime?          @db.Timestamptz(6)
+  proveedores      proveedores        @relation(fields: [proveedor_id], references: [id], onUpdate: NoAction)
+  sucursales       sucursales         @relation(fields: [sucursal_id], references: [id], onUpdate: NoAction)
+  usuarios         usuarios           @relation(fields: [usuario_id], references: [id], onUpdate: NoAction)
+  detalles_compras detalles_compras[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model detalles_compras {
+  id                       String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  compra_id                String                   @db.Uuid
+  producto_presentacion_id String                   @db.Uuid
+  cantidad                 Int
+  precio_unitario          Decimal                  @db.Decimal(12, 4)
+  created_at               DateTime?                @default(now()) @db.Timestamptz(6)
+  compras                  compras                  @relation(fields: [compra_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  productos_presentaciones productos_presentaciones @relation(fields: [producto_presentacion_id], references: [id], onUpdate: NoAction)
+  lotes                    lotes[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model detalles_ventas {
+  id                           String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  venta_id                     String                   @db.Uuid
+  producto_presentacion_id     String                   @db.Uuid
+  lote_id                      String                   @db.Uuid
+  cantidad                     Int
+  precio_unitario_presentacion Decimal                  @db.Decimal(12, 4)
+  descuento                    Decimal                  @default(0.0000) @db.Decimal(12, 4)
+  subtotal                     Decimal                  @db.Decimal(12, 4)
+  created_at                   DateTime?                @default(now()) @db.Timestamptz(6)
+  lotes                        lotes                    @relation(fields: [lote_id], references: [id], onUpdate: NoAction)
+  productos_presentaciones     productos_presentaciones @relation(fields: [producto_presentacion_id], references: [id], onUpdate: NoAction)
+  ventas                       ventas                   @relation(fields: [venta_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model empresas {
+  id           String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  ruc          String       @unique @db.VarChar(11)
+  razon_social String       @db.VarChar(150)
+  direccion    String?
+  created_at   DateTime?    @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime?    @default(now()) @db.Timestamptz(6)
+  deleted_at   DateTime?    @db.Timestamptz(6)
+  sucursales   sucursales[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model formas_farmaceuticas {
+  id           String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  nombre       String         @unique @db.VarChar(100)
+  created_at   DateTime?      @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime?      @default(now()) @db.Timestamptz(6)
+  deleted_at   DateTime?      @db.Timestamptz(6)
+  medicamentos medicamentos[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model laboratorios {
+  id                    String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  nombre                String                  @unique @db.VarChar(100)
+  pais                  String?                 @db.VarChar(50)
+  telefono              String?                 @db.VarChar(20)
+  email                 String?                 @db.VarChar(100)
+  created_at            DateTime?               @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime?               @default(now()) @db.Timestamptz(6)
+  deleted_at            DateTime?               @db.Timestamptz(6)
+  productos_comerciales productos_comerciales[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model lotes {
+  id                        String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  producto_comercial_id     String                   @db.Uuid
+  detalle_compra_id         String?                  @db.Uuid
+  sucursal_id               String                   @db.Uuid
+  numero_lote               String                   @db.VarChar(50)
+  fecha_fabricacion         DateTime?                @db.Date
+  fecha_vencimiento         DateTime                 @db.Date
+  precio_compra_unidad_base Decimal                  @db.Decimal(12, 4)
+  stock_actual              Int                      @default(0)
+  fecha_ingreso             DateTime?                @default(now()) @db.Timestamptz(6)
+  created_at                DateTime?                @default(now()) @db.Timestamptz(6)
+  updated_at                DateTime?                @default(now()) @db.Timestamptz(6)
+  deleted_at                DateTime?                @db.Timestamptz(6)
+  detalles_ventas           detalles_ventas[]
+  detalles_compras          detalles_compras?        @relation(fields: [detalle_compra_id], references: [id], onUpdate: NoAction)
+  productos_comerciales     productos_comerciales    @relation(fields: [producto_comercial_id], references: [id], onUpdate: NoAction)
+  sucursales                sucursales               @relation(fields: [sucursal_id], references: [id], onUpdate: NoAction)
+  movimientos_inventario    movimientos_inventario[]
+
+  @@unique([producto_comercial_id, numero_lote, sucursal_id], map: "uq_lote_producto_sucursal")
+  @@index([fecha_vencimiento, stock_actual], map: "idx_lotes_fefo", where: raw("((deleted_at IS NULL) AND (stock_actual > 0))"))
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model medicamentos {
+  id                    String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  principio_activo_id   String                  @db.Uuid
+  forma_farmaceutica_id String                  @db.Uuid
+  concentracion         Decimal                 @db.Decimal(10, 2)
+  unidad_concentracion  String                  @db.VarChar(20)
+  via_administracion    String                  @db.VarChar(50)
+  requiere_receta       Boolean                 @default(false)
+  afecto_igv            Boolean                 @default(true)
+  created_at            DateTime?               @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime?               @default(now()) @db.Timestamptz(6)
+  deleted_at            DateTime?               @db.Timestamptz(6)
+  formas_farmaceuticas  formas_farmaceuticas    @relation(fields: [forma_farmaceutica_id], references: [id], onUpdate: NoAction)
+  principios_activos    principios_activos      @relation(fields: [principio_activo_id], references: [id], onUpdate: NoAction)
+  productos_comerciales productos_comerciales[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model metodos_pago {
+  id                  String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  nombre              String    @unique @db.VarChar(50)
+  requiere_referencia Boolean   @default(false)
+  created_at          DateTime? @default(now()) @db.Timestamptz(6)
+  deleted_at          DateTime? @db.Timestamptz(6)
+  pagos               pagos[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model movimientos_caja {
+  id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  caja_id       String    @db.Uuid
+  usuario_id    String    @db.Uuid
+  tipo          String    @db.VarChar(20)
+  monto         Decimal   @db.Decimal(12, 4)
+  referencia_id String?   @db.Uuid
+  fecha         DateTime? @default(now()) @db.Timestamptz(6)
+  observacion   String?
+  cajas         cajas     @relation(fields: [caja_id], references: [id], onUpdate: NoAction)
+  usuarios      usuarios  @relation(fields: [usuario_id], references: [id], onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model movimientos_inventario {
+  id                           String                       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  lote_id                      String                       @db.Uuid
+  tipo_movimiento_id           String                       @db.Uuid
+  usuario_id                   String                       @db.Uuid
+  cantidad                     Int
+  stock_anterior               Int
+  stock_nuevo                  Int
+  documento_referencia         String?                      @db.VarChar(50)
+  fecha                        DateTime?                    @default(now()) @db.Timestamptz(6)
+  observacion                  String?
+  lotes                        lotes                        @relation(fields: [lote_id], references: [id], onUpdate: NoAction)
+  tipos_movimientos_inventario tipos_movimientos_inventario @relation(fields: [tipo_movimiento_id], references: [id], onUpdate: NoAction)
+  usuarios                     usuarios                     @relation(fields: [usuario_id], references: [id], onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model pagos {
+  id             String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  venta_id       String       @db.Uuid
+  metodo_pago_id String       @db.Uuid
+  monto          Decimal      @db.Decimal(12, 4)
+  referencia     String?      @db.VarChar(100)
+  created_at     DateTime?    @default(now()) @db.Timestamptz(6)
+  metodos_pago   metodos_pago @relation(fields: [metodo_pago_id], references: [id], onUpdate: NoAction)
+  ventas         ventas       @relation(fields: [venta_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model permisos {
+  id           String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  codigo       String         @unique @db.VarChar(50)
+  descripcion  String
+  created_at   DateTime?      @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime?      @default(now()) @db.Timestamptz(6)
+  deleted_at   DateTime?      @db.Timestamptz(6)
+  rol_permisos rol_permisos[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model principios_activos {
+  id           String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  nombre       String         @unique @db.VarChar(150)
+  descripcion  String?
+  created_at   DateTime?      @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime?      @default(now()) @db.Timestamptz(6)
+  deleted_at   DateTime?      @db.Timestamptz(6)
+  medicamentos medicamentos[]
+
+  @@index([nombre], map: "idx_principios_activos_nombre")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model productos_comerciales {
+  id                       String                     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  medicamento_id           String                     @db.Uuid
+  laboratorio_id           String                     @db.Uuid
+  categoria_id             String                     @db.Uuid
+  unidad_base_id           String                     @db.Uuid
+  sku                      String?                    @unique @db.VarChar(50)
+  nombre_comercial         String                     @db.VarChar(150)
+  registro_sanitario       String?                    @db.VarChar(50)
+  codigo_interno           String?                    @unique @db.VarChar(50)
+  estado                   String                     @default("ACTIVO") @db.VarChar(20)
+  created_at               DateTime?                  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime?                  @default(now()) @db.Timestamptz(6)
+  deleted_at               DateTime?                  @db.Timestamptz(6)
+  lotes                    lotes[]
+  categorias               categorias                 @relation(fields: [categoria_id], references: [id], onUpdate: NoAction)
+  laboratorios             laboratorios               @relation(fields: [laboratorio_id], references: [id], onUpdate: NoAction)
+  medicamentos             medicamentos               @relation(fields: [medicamento_id], references: [id], onUpdate: NoAction)
+  unidades_presentacion    unidades_presentacion      @relation(fields: [unidad_base_id], references: [id], onUpdate: NoAction)
+  productos_presentaciones productos_presentaciones[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model productos_presentaciones {
+  id                     String                @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  producto_comercial_id  String                @db.Uuid
+  unidad_presentacion_id String                @db.Uuid
+  cantidad_unidad_base   Int
+  codigo_barras          String?               @unique(map: "uq_codigo_barras_presentacion", where: raw("((deleted_at IS NULL) AND (codigo_barras IS NOT NULL))")) @db.VarChar(50)
+  precio_actual          Decimal               @db.Decimal(12, 4)
+  orden                  Int?                  @default(1)
+  created_at             DateTime?             @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime?             @default(now()) @db.Timestamptz(6)
+  deleted_at             DateTime?             @db.Timestamptz(6)
+  detalles_compras       detalles_compras[]
+  detalles_ventas        detalles_ventas[]
+  productos_comerciales  productos_comerciales @relation(fields: [producto_comercial_id], references: [id], onUpdate: NoAction)
+  unidades_presentacion  unidades_presentacion @relation(fields: [unidad_presentacion_id], references: [id], onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model proveedores {
+  id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  ruc          String    @unique @db.VarChar(11)
+  razon_social String    @db.VarChar(150)
+  direccion    String?
+  telefono     String?   @db.VarChar(20)
+  email        String?   @db.VarChar(100)
+  created_at   DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime? @default(now()) @db.Timestamptz(6)
+  deleted_at   DateTime? @db.Timestamptz(6)
+  compras      compras[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model rol_permisos {
+  rol_id     String   @db.Uuid
+  permiso_id String   @db.Uuid
+  permisos   permisos @relation(fields: [permiso_id], references: [id], onUpdate: NoAction)
+  roles      roles    @relation(fields: [rol_id], references: [id], onUpdate: NoAction)
+
+  @@id([rol_id, permiso_id])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model roles {
+  id           String         @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  nombre       String         @unique @db.VarChar(50)
+  created_at   DateTime?      @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime?      @default(now()) @db.Timestamptz(6)
+  deleted_at   DateTime?      @db.Timestamptz(6)
+  rol_permisos rol_permisos[]
+  usuarios     usuarios[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model sucursales {
+  id                 String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  empresa_id         String               @db.Uuid
+  nombre             String               @db.VarChar(100)
+  direccion          String
+  telefono           String?              @db.VarChar(20)
+  created_at         DateTime?            @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime?            @default(now()) @db.Timestamptz(6)
+  deleted_at         DateTime?            @db.Timestamptz(6)
+  cajas              cajas[]
+  compras            compras[]
+  lotes              lotes[]
+  empresas           empresas             @relation(fields: [empresa_id], references: [id], onUpdate: NoAction)
+  usuario_sucursales usuario_sucursales[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model tipos_movimientos_inventario {
+  id                     String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  codigo                 String                   @unique @db.VarChar(20)
+  descripcion            String
+  afecta_stock           Int
+  created_at             DateTime?                @default(now()) @db.Timestamptz(6)
+  deleted_at             DateTime?                @db.Timestamptz(6)
+  movimientos_inventario movimientos_inventario[]
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model unidades_presentacion {
+  id                       String                     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  nombre                   String                     @unique @db.VarChar(50)
+  abreviatura              String                     @unique @db.VarChar(10)
+  created_at               DateTime?                  @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime?                  @default(now()) @db.Timestamptz(6)
+  deleted_at               DateTime?                  @db.Timestamptz(6)
+  productos_comerciales    productos_comerciales[]
+  productos_presentaciones productos_presentaciones[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model usuarios {
+  id                                                         String                   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  rol_id                                                     String                   @db.Uuid
+  nombre                                                     String                   @db.VarChar(100)
+  correo                                                     String                   @unique @db.VarChar(100)
+  password_hash                                              String                   @db.VarChar(255)
+  estado                                                     String                   @default("ACTIVO") @db.VarChar(20)
+  created_at                                                 DateTime?                @default(now()) @db.Timestamptz(6)
+  updated_at                                                 DateTime?                @default(now()) @db.Timestamptz(6)
+  deleted_at                                                 DateTime?                @db.Timestamptz(6)
+  compras                                                    compras[]
+  movimientos_caja                                           movimientos_caja[]
+  movimientos_inventario                                     movimientos_inventario[]
+  usuario_sucursales_usuario_sucursales_created_byTousuarios usuario_sucursales[]     @relation("usuario_sucursales_created_byTousuarios")
+  usuario_sucursales_usuario_sucursales_updated_byTousuarios usuario_sucursales[]     @relation("usuario_sucursales_updated_byTousuarios")
+  usuario_sucursales_usuario_sucursales_usuario_idTousuarios usuario_sucursales?      @relation("usuario_sucursales_usuario_idTousuarios")
+  roles                                                      roles                    @relation(fields: [rol_id], references: [id], onUpdate: NoAction)
+  ventas                                                     ventas[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model ventas {
+  id              String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  cliente_id      String?           @db.Uuid
+  usuario_id      String            @db.Uuid
+  caja_id         String            @db.Uuid
+  fecha           DateTime          @default(now()) @db.Timestamptz(6)
+  subtotal        Decimal           @db.Decimal(12, 4)
+  descuento       Decimal           @default(0.0000) @db.Decimal(12, 4)
+  igv             Decimal           @db.Decimal(12, 4)
+  total           Decimal           @db.Decimal(12, 4)
+  estado          String            @default("EMITIDO") @db.VarChar(20)
+  created_at      DateTime?         @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime?         @default(now()) @db.Timestamptz(6)
+  deleted_at      DateTime?         @db.Timestamptz(6)
+  detalles_ventas detalles_ventas[]
+  pagos           pagos[]
+  cajas           cajas             @relation(fields: [caja_id], references: [id], onUpdate: NoAction)
+  clientes        clientes?         @relation(fields: [cliente_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  usuarios        usuarios          @relation(fields: [usuario_id], references: [id], onUpdate: NoAction)
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model backup_usuario_sucursales_202501 {
+  usuario_id   String?   @db.Uuid
+  sucursal_id  String?   @db.Uuid
+  es_principal Boolean?
+  activo       Boolean?
+  created_at   DateTime? @db.Timestamptz(6)
+  updated_at   DateTime? @db.Timestamptz(6)
+  created_by   String?   @db.Uuid
+  updated_by   String?   @db.Uuid
+
+  @@ignore
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model migracion_log {
+  id                  Int       @id @default(autoincrement())
+  tabla               String?   @db.VarChar(100)
+  operacion           String?   @db.VarChar(50)
+  registros_afectados Int?
+  fecha               DateTime? @default(now()) @db.Timestamptz(6)
+  observacion         String?
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model usuario_sucursales {
+  usuario_id                                       String     @unique(map: "idx_usuario_sucursales_principal_unico", where: raw("((es_principal = true) AND (activo = true))")) @db.Uuid
+  sucursal_id                                      String     @db.Uuid
+  es_principal                                     Boolean?   @default(false)
+  activo                                           Boolean?   @default(true)
+  created_at                                       DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at                                       DateTime?  @default(now()) @db.Timestamptz(6)
+  created_by                                       String?    @db.Uuid
+  updated_by                                       String?    @db.Uuid
+  usuarios_usuario_sucursales_created_byTousuarios usuarios?  @relation("usuario_sucursales_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction, map: "fk_created_by")
+  sucursales                                       sucursales @relation(fields: [sucursal_id], references: [id], onUpdate: NoAction, map: "fk_sucursal")
+  usuarios_usuario_sucursales_updated_byTousuarios usuarios?  @relation("usuario_sucursales_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction, map: "fk_updated_by")
+  usuarios_usuario_sucursales_usuario_idTousuarios usuarios   @relation("usuario_sucursales_usuario_idTousuarios", fields: [usuario_id], references: [id], onUpdate: NoAction, map: "fk_usuario")
+
+  @@id([usuario_id, sucursal_id], map: "pk_usuario_sucursales")
+  @@index([activo], map: "idx_usuario_sucursales_activo", where: raw("(activo = true)"))
+  @@index([sucursal_id, activo], map: "idx_usuario_sucursales_sucursal", where: raw("(activo = true)"))
+  @@index([usuario_id, activo], map: "idx_usuario_sucursales_usuario", where: raw("(activo = true)"))
+}

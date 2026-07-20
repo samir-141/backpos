@@ -1,0 +1,93 @@
+# ==============================================================================
+# NestJS - Archivos de Compilación y Dependencias
+# ==============================================================================
+/dist
+/node_modules
+/build
+.node_repl_history
+
+# Caché de compilación rápida (SWC / Turbopack / TypeScript)
+.swc/
+.turbo/
+.tsconfig.tsbuildinfo
+
+# ==============================================================================
+# Variables de Entorno (¡Nunca subir a producción!)
+# ==============================================================================
+.env
+.env.local
+.env.dev
+.env.development
+.env.test
+.env.stage
+.env.production
+*.env.local
+
+# ==============================================================================
+# Bases de Datos y ORMs (Prisma / TypeORM / Docker)
+# ==============================================================================
+# Prisma
+/generated/prisma
+/prisma/migrations/**/*.sql
+# Si usas SQLite local para pruebas rápidas
+*.db
+*.db-journal
+
+# Docker / Bases de datos locales
+.docker/
+/postgres_data/
+/mysql_data/
+
+# ==============================================================================
+# Logs y Datos de Ejecución (Runtime)
+# ==============================================================================
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Reportes de diagnóstico de Node.js
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# ==============================================================================
+# Pruebas y Cobertura (Jest / E2E)
+# ==============================================================================
+/coverage
+/.nyc_output
+.jest/
+
+# ==============================================================================
+# Editores e IDEs
+# ==============================================================================
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/snippets/
+
+# WebStorm / IntelliJ / Eclipse / OS
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+
+# ==============================================================================
+# Carpetas Temporales
+# ==============================================================================
+.temp/
+.tmp/
+
+/src/generated/prisma
