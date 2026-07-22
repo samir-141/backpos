@@ -1,6 +1,6 @@
 // src/reportes/reportes.controller.ts
 import { Controller, Get, Param, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 @Controller('usuarios')
 export class UsuariosController {
     constructor(private readonly prisma: PrismaService) { }

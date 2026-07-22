@@ -22,7 +22,6 @@ export class AuthService {
                 roles: true,
             },
         });
-
         if (!usuario) {
             throw new UnauthorizedException('Credenciales inválidas');
         }

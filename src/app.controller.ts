@@ -1,22 +1,12 @@
+// src/app.controller.ts
 import { Controller, Get } from '@nestjs/common';
-import { AppService } from './app.service';
-import { PrismaService } from './prisma/prisma.service';
+import { ApiTags } from '@nestjs/swagger';
+
+@ApiTags('Health')
 @Controller()
 export class AppController {
-  constructor(private readonly appService: AppService, private readonly prismaService: PrismaService) { }
-
   @Get()
-  getHello(): string {
-    return this.appService.getHello();
-  }
-
-  @Get('laboratorios')
-  async getLaboratorios() {
-    return this.prismaService.findLaboratorios();
-  }
-
-  @Get('productos')
-  async getProductos() {
-    return this.prismaService.findProductosCatalogo();
+  getHealth(): string {
+    return '🚀 FarmaPOS API is running!';
   }
 }
