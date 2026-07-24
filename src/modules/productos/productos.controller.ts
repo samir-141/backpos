@@ -17,11 +17,18 @@ export class ProductosController {
         return this.productosService.findAll(query);
     }
 
+    @Get('sucursal/:sucursalId')
+    @ApiOperation({ summary: 'Listar productos filtrados por ID de sucursal' })
+    findBySucursal(@Param('sucursalId') sucursalId: string, @Query() query: QueryProductosDto) {
+        return this.productosService.findAll({ ...query, sucursal_id: sucursalId });
+    }
+
     @Get('buscar/identificador')
     @ApiOperation({ summary: 'Buscar producto comercial o presentación por SKU, código de barras o código interno' })
     buscarPorIdentificador(@Query('valor') valor: string) {
         return this.productosService.buscarPorIdentificador(valor);
     }
+
 
     @Get(':id')
     @ApiOperation({ summary: 'Obtener detalle de un producto comercial por su ID' })

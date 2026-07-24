@@ -102,7 +102,14 @@ export class ProductosService {
             paramIndex++;
         }
 
+        if (query.sucursal_id) {
+            condiciones.push(`producto_comercial_id IN (SELECT DISTINCT producto_comercial_id FROM public.lotes WHERE sucursal_id = $${paramIndex}::uuid AND deleted_at IS NULL AND stock_actual > 0)`);
+            params.push(query.sucursal_id);
+            paramIndex++;
+        }
+
         const whereClause = condiciones.length > 0 ? `WHERE ${condiciones.join(' AND ')}` : '';
+
         const orderByClause = this.buildOrderBy(orden);
 
         // Agregar LIMIT y OFFSET a los parámetros

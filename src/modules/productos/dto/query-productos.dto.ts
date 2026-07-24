@@ -48,6 +48,11 @@ export class QueryProductosDto {
     @IsOptional()
     principio_activo_id?: string;
 
+    @ApiPropertyOptional({ description: 'Filtrar productos por ID de sucursal' })
+    @IsUUID()
+    @IsOptional()
+    sucursal_id?: string;
+
     @ApiPropertyOptional({
         description: 'Ordenamiento',
         enum: OrdenProductos,
@@ -56,4 +61,5 @@ export class QueryProductosDto {
     @IsEnum(OrdenProductos)
     @IsOptional()
     orden?: OrdenProductos = OrdenProductos.NOMBRE_ASC;
+
 }
