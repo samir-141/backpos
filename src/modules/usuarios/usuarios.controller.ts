@@ -1,51 +1,61 @@
-// src/reportes/reportes.controller.ts
-import { Controller, Get, Param, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { Controller, Get, Post, Patch, Delete, Body, Param, HttpCode, HttpStatus } from '@nestjs/common';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { UsuariosService } from './usuarios.service';
+import { CreateUsuarioDto } from './dto/create-usuario.dto';
+import { UpdateUsuarioDto } from './dto/update-usuario.dto';
+
+@ApiTags('Usuarios & Administración')
 @Controller('usuarios')
 export class UsuariosController {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(private readonly usuariosService: UsuariosService) { }
 
-    // 1. Gráfico de Evolución de Ventas (Agrupado por Fecha)
-    @Get('usuario')
-    async getUsuarios() {
-        const agrupado = await this.prisma.usuarios.findMany({
-            where: {
-                estado: 'ACTIVO',
-                deleted_at: null,
-            },
-            orderBy: { nombre: 'asc' },
-        });
-        const roles = await this.prisma.roles.findMany();
-        // Formateamos la respuesta para que el Frontend reciba las llaves exactas de tu interfaz VentaGrafico
-        return agrupado.map((v) => ({
-            id: v.id,
-            nombre: v.nombre,
-            correo: v.correo,
-            rol: roles.map((r) => r.nombre),
-            estado: v.estado,
-        }));
-    }
-    @Get('usuario/:id')  // ← Corregido
-    async getUsuarioById(@Param('id') id: string) {
-        const usuario = await this.prisma.usuarios.findUnique({
-            where: {
-                id: id,
-            }
-        });
-        const roles = await this.prisma.roles.findMany();
-        if (!usuario) {
-            throw new NotFoundException(`Usuario con id ${id} no encontrado`);
-        }
-
-        return {
-            id: usuario.id,
-            nombre: usuario.nombre,
-            correo: usuario.correo,
-            estado: usuario.estado,
-            roles: roles.filter((rol) => rol.id === usuario.rol_id).map((rol) => rol.nombre), // o rol.id si prefieres
-            // roles: usuario.roles, // si quieres el objeto completo
-        };
+    @Get()
+    @ApiOperation({ summary: 'Listar todos los usuarios del sistema' })
+    findAll() {
+        return this.usuariosService.findAll();
     }
 
+    @Get('roles')
+    @ApiOperation({ summary: 'Listar roles del sistema y sus permisos' })
+    getRoles() {
+        return this.usuariosService.getRoles();
+    }
 
+    @Get('sucursales')
+    @ApiOperation({ summary: 'Listar sucursales de la empresa' })
+    getSucursales() {
+        return this.usuariosService.getSucursales();
+    }
+
+    @Post('sucursales')
+    @HttpCode(HttpStatus.CREATED)
+    @ApiOperation({ summary: 'Registrar nueva sucursal' })
+    createSucursal(@Body() body: { nombre: string; direccion: string; telefono?: string }) {
+        return this.usuariosService.createSucursal(body);
+    }
+
+    @Get(':id')
+    @ApiOperation({ summary: 'Obtener detalle de un usuario por ID' })
+    findOne(@Param('id') id: string) {
+        return this.usuariosService.findOne(id);
+    }
+
+    @Post()
+    @HttpCode(HttpStatus.CREATED)
+    @ApiOperation({ summary: 'Registrar un nuevo usuario' })
+    create(@Body() createDto: CreateUsuarioDto) {
+        return this.usuariosService.create(createDto);
+    }
+
+    @Patch(':id')
+    @ApiOperation({ summary: 'Actualizar información o contraseña de usuario' })
+    update(@Param('id') id: string, @Body() updateDto: UpdateUsuarioDto) {
+        return this.usuariosService.update(id, updateDto);
+    }
+
+    @Delete(':id')
+    @ApiOperation({ summary: 'Eliminar usuario (soft delete)' })
+    remove(@Param('id') id: string) {
+        return this.usuariosService.remove(id);
+    }
 }
