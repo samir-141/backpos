@@ -11,17 +11,27 @@ export class ReportesService {
     async getReporteVentas(query: QueryReportesDto) {
         this.logger.log(`Generando reporte de ventas para sucursal: ${query.sucursal_id || 'Global'}`);
 
-        let fechaInicio = query.fecha_inicio ? new Date(`${query.fecha_inicio}T00:00:00.000Z`) : new Date();
-        if (!query.fecha_inicio) {
-            fechaInicio.setDate(fechaInicio.getDate() - 30); // Por defecto últimos 30 días
+        let fechaInicio = new Date();
+        fechaInicio.setDate(fechaInicio.getDate() - 90); // Últimos 90 días por defecto
+
+        if (query.fecha_inicio) {
+            fechaInicio = new Date(`${query.fecha_inicio}T00:00:00.000Z`);
         }
 
-        let fechaFin = query.fecha_fin ? new Date(`${query.fecha_fin}T23:59:59.999Z`) : new Date();
+        let fechaFin = new Date();
+        fechaFin.setDate(fechaFin.getDate() + 2); // 2 días de margen para cubrir zonas horarias
+
+        if (query.fecha_fin) {
+            fechaFin = new Date(`${query.fecha_fin}T23:59:59.999Z`);
+            fechaFin.setDate(fechaFin.getDate() + 1);
+        }
+
+        const sucursalValida = query.sucursal_id && query.sucursal_id !== 'undefined' && query.sucursal_id !== 'null';
 
         const whereVentas: any = {
             fecha: { gte: fechaInicio, lte: fechaFin },
             deleted_at: null,
-            ...(query.sucursal_id ? { cajas: { sucursal_id: query.sucursal_id } } : {}),
+            ...(sucursalValida ? { cajas: { sucursal_id: query.sucursal_id } } : {}),
         };
 
         const ventas = await this.prisma.ventas.findMany({
@@ -77,19 +87,42 @@ export class ReportesService {
             porcentaje: totalVentas > 0 ? Number(((monto / totalVentas) * 100).toFixed(1)) : 0
         }));
 
-        // Lista simplificada de ventas para la tabla
-        const listaVentas = ventas.map(v => ({
-            id: v.id,
-            fecha: v.fecha,
-            cliente_nombre: v.clientes?.nombre || 'Cliente General',
-            cliente_documento: v.clientes ? `${v.clientes.tipo_documento}: ${v.clientes.numero_documento}` : 'S/D',
-            subtotal: Number(v.subtotal),
-            igv: Number(v.igv),
-            total: Number(v.total),
-            items_count: v.detalles_ventas.length,
-            metodo_pago: v.pagos[0]?.metodos_pago?.nombre || v.pagos[0]?.referencia || 'EFECTIVO',
-            estado: v.estado,
-        }));
+        // Lista detallada de ventas con ítems comprados
+        const listaVentas = ventas.map(v => {
+            let tipoComp = (v as any).tipo_comprobante;
+            if (!tipoComp) {
+                if (v.clientes?.tipo_documento === 'RUC') tipoComp = 'FACTURA';
+                else if (v.clientes?.tipo_documento === 'DNI') tipoComp = 'BOLETA';
+                else tipoComp = 'NOTA_VENTA';
+            }
+
+            const itemsDetalle = v.detalles_ventas.map(d => {
+                const prodNombre = d.productos_presentaciones?.productos_comerciales?.nombre_comercial || 'Producto Farmacéutico';
+                const presNombre = (d.productos_presentaciones as any)?.presentacion_nombre || (d.productos_presentaciones as any)?.unidades_presentacion?.nombre || 'Unidad';
+                return {
+                    descripcion: `${prodNombre} (${presNombre})`,
+                    presentacion: presNombre,
+                    cantidad: d.cantidad,
+                    precioUnitario: Number(d.precio_unitario_presentacion || 0),
+                    subtotal: Number(d.subtotal || 0),
+                };
+            });
+
+            return {
+                id: v.id,
+                fecha: v.fecha,
+                tipo_comprobante: tipoComp,
+                cliente_nombre: v.clientes?.nombre || 'CLIENTE GENERAL',
+                cliente_documento: v.clientes ? `${v.clientes.tipo_documento}: ${v.clientes.numero_documento}` : 'S/D',
+                subtotal: Number(v.subtotal),
+                igv: Number(v.igv),
+                total: Number(v.total),
+                items_count: v.detalles_ventas.length,
+                items: itemsDetalle,
+                metodo_pago: v.pagos[0]?.metodos_pago?.nombre || v.pagos[0]?.referencia || 'EFECTIVO',
+                estado: v.estado,
+            };
+        });
 
         return {
             resumen_kpis: {
@@ -103,107 +136,55 @@ export class ReportesService {
             },
             desglose_pagos: desgloseMetodosPago,
             ventas_lista: listaVentas,
-            rango: {
-                fecha_inicio: fechaInicio.toISOString().split('T')[0],
-                fecha_fin: fechaFin.toISOString().split('T')[0],
-            }
         };
     }
 
     async getReporteInventario(query: QueryReportesDto) {
         this.logger.log(`Generando reporte de inventario para sucursal: ${query.sucursal_id || 'Global'}`);
 
-        const whereLotes: any = {
-            deleted_at: null,
-            ...(query.sucursal_id ? { sucursal_id: query.sucursal_id } : {}),
-        };
+        const sucursalValida = query.sucursal_id && query.sucursal_id !== 'undefined' && query.sucursal_id !== 'null';
 
         const lotes = await this.prisma.lotes.findMany({
-            where: whereLotes,
+            where: {
+                deleted_at: null,
+                ...(sucursalValida ? { sucursal_id: query.sucursal_id } : {})
+            },
             include: {
-                productos_comerciales: {
-                    include: {
-                        productos_presentaciones: {
-                            where: { deleted_at: null },
-                            take: 1
-                        }
-                    }
-                }
+                productos_comerciales: true,
+                sucursales: true,
             },
             orderBy: { fecha_vencimiento: 'asc' }
         });
 
-        // 1. Valorización de Inventario
-        let costoTotalInventario = 0;
-        let valorVentaEstimado = 0;
-        let totalUnidadesBase = 0;
+        const valorTotalInventario = lotes.reduce((acc, l) => acc + (l.stock_actual * Number(l.precio_compra_unidad_base || 0)), 0);
+        const totalItemsLotes = lotes.length;
+        const lotesPorVencerCount = lotes.filter(l => {
+            const diasVencimiento = Math.ceil((new Date(l.fecha_vencimiento).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+            return diasVencimiento <= 60 && diasVencimiento > 0;
+        }).length;
+        const lotesAgotadosCount = lotes.filter(l => l.stock_actual <= 0).length;
 
-        lotes.forEach(l => {
-            const stock = l.stock_actual;
-            const precioCompra = Number(l.precio_compra_unidad_base);
-            const precioVenta = Number(l.productos_comerciales?.productos_presentaciones[0]?.precio_actual || (precioCompra * 1.3));
-
-            costoTotalInventario += (stock * precioCompra);
-            valorVentaEstimado += (stock * precioVenta);
-            totalUnidadesBase += stock;
-        });
-
-        // 2. Control FEFO: Vencimientos próximos
-        const hoy = new Date();
-        const en30Dias = new Date(hoy);
-        en30Dias.setDate(en30Dias.getDate() + 30);
-        const en90Dias = new Date(hoy);
-        en90Dias.setDate(en90Dias.getDate() + 90);
-
-        const vencidos = lotes.filter(l => new Date(l.fecha_vencimiento) < hoy && l.stock_actual > 0);
-        const porVencer30 = lotes.filter(l => new Date(l.fecha_vencimiento) >= hoy && new Date(l.fecha_vencimiento) <= en30Dias && l.stock_actual > 0);
-        const porVencer90 = lotes.filter(l => new Date(l.fecha_vencimiento) > en30Dias && new Date(l.fecha_vencimiento) <= en90Dias && l.stock_actual > 0);
-
-        const listaVencimientosFefo = lotes
-            .filter(l => new Date(l.fecha_vencimiento) <= en90Dias && l.stock_actual > 0)
-            .map(l => {
-                const diasRestantes = Math.ceil((new Date(l.fecha_vencimiento).getTime() - hoy.getTime()) / (1000 * 3600 * 24));
-                let estadoVencimiento = 'EN_FECHA';
-                if (diasRestantes <= 0) estadoVencimiento = 'VENCIDO';
-                else if (diasRestantes <= 30) estadoVencimiento = 'URGENTE';
-                else if (diasRestantes <= 90) estadoVencimiento = 'ADVERTENCIA';
-
-                return {
-                    id: l.id,
-                    producto: l.productos_comerciales.nombre_comercial,
-                    sku: l.productos_comerciales.sku,
-                    numero_lote: l.numero_lote,
-                    stock_actual: l.stock_actual,
-                    fecha_vencimiento: l.fecha_vencimiento,
-                    dias_restantes: diasRestantes,
-                    estado: estadoVencimiento,
-                };
-            });
-
-        // 3. Stock Bajo y Agotados
-        const lotesCriticos = lotes.filter(l => l.stock_actual <= 15).map(l => ({
+        const lotesLista = lotes.map(l => ({
             id: l.id,
-            producto: l.productos_comerciales.nombre_comercial,
-            sku: l.productos_comerciales.sku,
-            stock_actual: l.stock_actual,
             numero_lote: l.numero_lote,
+            producto_nombre: l.productos_comerciales?.nombre_comercial || 'Producto sin Nombre',
+            sku: l.productos_comerciales?.sku || 'SIN SKU',
+            sucursal_nombre: l.sucursales?.nombre || 'Sucursal Principal',
+            stock_actual: l.stock_actual,
+            precio_compra_base: Number(l.precio_compra_unidad_base || 0),
+            valor_total_lote: l.stock_actual * Number(l.precio_compra_unidad_base || 0),
+            fecha_vencimiento: l.fecha_vencimiento,
+            dias_para_vencer: Math.ceil((new Date(l.fecha_vencimiento).getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
         }));
 
         return {
-            valorizacion: {
-                costo_total_inventario: costoTotalInventario,
-                valor_venta_estimado: valorVentaEstimado,
-                margen_potencial: Math.max(0, valorVentaEstimado - costoTotalInventario),
-                total_unidades_base: totalUnidadesBase,
-                total_lotes: lotes.length,
+            resumen_inventario: {
+                valor_total_inventario: valorTotalInventario,
+                total_lotes: totalItemsLotes,
+                lotes_por_vencer: lotesPorVencerCount,
+                lotes_agotados: lotesAgotadosCount,
             },
-            control_vencimientos: {
-                vencidos_count: vencidos.length,
-                urgentes_30_dias_count: porVencer30.length,
-                advertencia_90_dias_count: porVencer90.length,
-                lista: listaVencimientosFefo,
-            },
-            stock_critico: lotesCriticos,
+            lotes_lista: lotesLista,
         };
     }
 }

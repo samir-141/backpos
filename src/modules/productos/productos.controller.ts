@@ -49,6 +49,28 @@ export class ProductosController {
         return this.productosService.update(id, updateDto);
     }
 
+    @Post('reabastecer')
+    @ApiOperation({ summary: 'Reabastecer stock de un producto agregando un lote nuevo o existente (+500 unidades)' })
+    reabastecer(@Body() dto: {
+        producto_comercial_id: string;
+        sucursal_id?: string;
+        numero_lote: string;
+        fecha_vencimiento: string;
+        stock_adicional: number;
+        precio_compra_base: number;
+    }) {
+        return this.productosService.reabastecerStock(dto);
+    }
+
+    @Post(':id/presentaciones')
+    @ApiOperation({ summary: 'Configurar/Actualizar presentaciones de venta unificadas por producto' })
+    actualizarPresentaciones(
+        @Param('id') id: string,
+        @Body() dto: { presentaciones: Array<{ unidad_presentacion_id?: string; nombre?: string; cantidad_unidad_base: number; precio_actual: number; codigo_barras?: string }> }
+    ) {
+        return this.productosService.actualizarPresentaciones(id, dto.presentaciones);
+    }
+
     @Delete(':id')
     @ApiOperation({ summary: 'Marcar como eliminado (soft delete) un producto comercial' })
     remove(@Param('id') id: string) {

@@ -546,6 +546,146 @@ export class ProductosService {
     }
 
     /**
+     * Reabastecimiento masivo de stock para un producto comercial (+500 unidades base)
+     */
+    async reabastecerStock(dto: {
+        producto_comercial_id: string;
+        sucursal_id?: string;
+        numero_lote: string;
+        fecha_vencimiento: string;
+        stock_adicional: number;
+        precio_compra_base: number;
+    }) {
+        this.logger.log(`Reabasteciendo ${dto.stock_adicional} unidades para el producto: ${dto.producto_comercial_id}`);
+
+        let sucursalId = dto.sucursal_id;
+        if (!sucursalId || sucursalId === 'undefined' || sucursalId === 'null') {
+            const sucursal = await this.prisma.sucursales.findFirst({ where: { deleted_at: null } });
+            if (!sucursal) throw new BadRequestException('No hay ninguna sucursal activa en el sistema.');
+            sucursalId = sucursal.id;
+        }
+
+        const producto = await this.prisma.productos_comerciales.findFirst({
+            where: { id: dto.producto_comercial_id, deleted_at: null }
+        });
+        if (!producto) {
+            throw new NotFoundException(`Producto comercial con ID ${dto.producto_comercial_id} no encontrado.`);
+        }
+
+        const loteExistente = await this.prisma.lotes.findFirst({
+            where: {
+                producto_comercial_id: dto.producto_comercial_id,
+                sucursal_id: sucursalId,
+                numero_lote: dto.numero_lote,
+                deleted_at: null
+            }
+        });
+
+        if (loteExistente) {
+            const loteActualizado = await this.prisma.lotes.update({
+                where: { id: loteExistente.id },
+                data: {
+                    stock_actual: loteExistente.stock_actual + Number(dto.stock_adicional),
+                    precio_compra_unidad_base: dto.precio_compra_base || loteExistente.precio_compra_unidad_base,
+                    fecha_vencimiento: dto.fecha_vencimiento ? new Date(dto.fecha_vencimiento) : loteExistente.fecha_vencimiento,
+                }
+            });
+            return {
+                exito: true,
+                mensaje: `Stock incrementado exitosamente en +${dto.stock_adicional} unidades para el lote ${dto.numero_lote}`,
+                lote: loteActualizado
+            };
+        } else {
+            const nuevoLote = await this.prisma.lotes.create({
+                data: {
+                    producto_comercial_id: dto.producto_comercial_id,
+                    sucursal_id: sucursalId,
+                    numero_lote: dto.numero_lote || `LOTE-${Date.now().toString().slice(-6)}`,
+                    fecha_vencimiento: dto.fecha_vencimiento ? new Date(dto.fecha_vencimiento) : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+                    precio_compra_unidad_base: dto.precio_compra_base || 0,
+                    stock_actual: Number(dto.stock_adicional),
+                }
+            });
+            return {
+                exito: true,
+                mensaje: `Nuevo lote ${nuevoLote.numero_lote} registrado con ${dto.stock_adicional} unidades base`,
+                lote: nuevoLote
+            };
+        }
+    }
+
+    /**
+     * Configurar o actualizar presentaciones de venta unificadas por producto (Caja, Blíster, Unidad, Frasco)
+     */
+    async actualizarPresentaciones(
+        productoComercialId: string,
+        presentaciones: Array<{
+            unidad_presentacion_id?: string;
+            nombre?: string;
+            cantidad_unidad_base: number;
+            precio_actual: number;
+            codigo_barras?: string;
+        }>
+    ) {
+        this.logger.log(`Actualizando presentaciones unificadas para el producto ${productoComercialId}`);
+
+        const producto = await this.prisma.productos_comerciales.findFirst({
+            where: { id: productoComercialId, deleted_at: null }
+        });
+        if (!producto) throw new NotFoundException('Producto no encontrado');
+
+        const unidades = await this.prisma.unidades_presentacion.findMany();
+        const unidadDefault = unidades[0]?.id || '00000000-0000-0000-0000-000000000001';
+
+        return await this.prisma.$transaction(async (tx) => {
+            for (let i = 0; i < presentaciones.length; i++) {
+                const pres = presentaciones[i];
+                let presUnitId = pres.unidad_presentacion_id;
+
+                if (!presUnitId && pres.nombre) {
+                    const busq = unidades.find(u => u.nombre.toLowerCase().includes(pres.nombre!.toLowerCase()));
+                    presUnitId = busq?.id || unidadDefault;
+                } else if (!presUnitId) {
+                    presUnitId = unidadDefault;
+                }
+
+                const existente = await tx.productos_presentaciones.findFirst({
+                    where: {
+                        producto_comercial_id: productoComercialId,
+                        unidad_presentacion_id: presUnitId,
+                        deleted_at: null
+                    }
+                });
+
+                if (existente) {
+                    await tx.productos_presentaciones.update({
+                        where: { id: existente.id },
+                        data: {
+                            cantidad_unidad_base: Number(pres.cantidad_unidad_base),
+                            precio_actual: Number(pres.precio_actual),
+                            codigo_barras: pres.codigo_barras || existente.codigo_barras,
+                            orden: i + 1,
+                        }
+                    });
+                } else {
+                    await tx.productos_presentaciones.create({
+                        data: {
+                            producto_comercial_id: productoComercialId,
+                            unidad_presentacion_id: presUnitId,
+                            cantidad_unidad_base: Number(pres.cantidad_unidad_base),
+                            precio_actual: Number(pres.precio_actual),
+                            codigo_barras: pres.codigo_barras || null,
+                            orden: i + 1,
+                        }
+                    });
+                }
+            }
+
+            return { exito: true, mensaje: 'Presentaciones unificadas actualizadas correctamente' };
+        });
+    }
+
+    /**
      * Construye la cláusula ORDER BY según el enum de ordenamiento
      */
     private buildOrderBy(orden?: OrdenProductos): string {

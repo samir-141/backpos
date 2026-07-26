@@ -13,9 +13,9 @@ import { VentasModule } from './modules/ventas/ventas.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ClientesModule } from './modules/clientes/clientes.module';
 import { ReportesModule } from './modules/reportes/reportes.module';
-
+import { FacturacionModule } from './modules/facturacion/facturacion.module';
 @Module({
-  imports: [AuthModule, ProductsModule, PrismaModule, ProductosModule, UsuariosModule, DiagnosticosModule, CatalogosModule, VentasModule, DashboardModule, ClientesModule, ReportesModule],
+  imports: [AuthModule, ProductsModule, PrismaModule, ProductosModule, UsuariosModule, DiagnosticosModule, CatalogosModule, VentasModule, DashboardModule, ClientesModule, ReportesModule, FacturacionModule],
   controllers: [AppController, TestController],
   providers: [AppService],
 })

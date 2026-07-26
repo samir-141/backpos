@@ -29,4 +29,11 @@ export class VentasController {
     findOne(@Param('id') id: string) {
         return this.ventasService.findOne(id);
     }
+
+    @Post(':id/anular')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({ summary: 'Anular una venta y reponer inventario en los lotes' })
+    anular(@Param('id') id: string) {
+        return this.ventasService.anular(id);
+    }
 }

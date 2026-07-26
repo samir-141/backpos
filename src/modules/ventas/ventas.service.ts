@@ -9,7 +9,8 @@ export class VentasService {
     constructor(private readonly prisma: PrismaService) { }
 
     async create(dto: CreateVentaDto, sucursalId?: string, usuarioId?: string) {
-        this.logger.log(`Registrando venta por total S/ ${dto.total} - Comprobante: ${dto.tipo_comprobante}`);
+        const metodoPagoNombre = String(dto.metodo_pago || 'EFECTIVO').trim().toUpperCase();
+        this.logger.log(`Registrando venta por total S/ ${dto.total} - Comprobante: ${dto.tipo_comprobante} - Método: ${metodoPagoNombre}`);
 
         if (!dto.items || dto.items.length === 0) {
             throw new BadRequestException('La venta debe incluir al menos un producto.');
@@ -88,7 +89,7 @@ export class VentasService {
                 }
             });
 
-            // 5. Procesar los Detalles de la Venta y Descontar Stock FEFO
+            // 5. Procesar los Detalles de la Venta y Descontar Stock FEFO Multilote
             for (const item of dto.items) {
                 // A. Obtener presentación del producto
                 let presentacion = await tx.productos_presentaciones.findFirst({
@@ -99,7 +100,6 @@ export class VentasService {
                 });
 
                 if (!presentacion) {
-                    // Si no existe la presentación en base de datos, crear una por defecto
                     presentacion = await tx.productos_presentaciones.create({
                         data: {
                             producto_comercial_id: item.producto_comercial_id,
@@ -111,8 +111,10 @@ export class VentasService {
                     });
                 }
 
-                // B. Obtener Lote disponible por FEFO
-                let lote = await tx.lotes.findFirst({
+                let unidadesPendientes = item.cantidad * Number(presentacion.cantidad_unidad_base || 1);
+
+                // Obtener todos los lotes disponibles ordenados por vencimiento (FEFO)
+                const lotesDisponibles = await tx.lotes.findMany({
                     where: {
                         producto_comercial_id: item.producto_comercial_id,
                         sucursal_id: finalSucursalId,
@@ -122,68 +124,75 @@ export class VentasService {
                     orderBy: { fecha_vencimiento: 'asc' }
                 });
 
-                if (!lote) {
-                    // Crear un lote de stock por defecto si no existe ninguno con stock positivo
-                    lote = await tx.lotes.create({
+                if (lotesDisponibles.length === 0) {
+                    const nuevoLote = await tx.lotes.create({
                         data: {
                             producto_comercial_id: item.producto_comercial_id,
                             sucursal_id: finalSucursalId,
                             numero_lote: 'LOTE-STD-' + Date.now().toString().slice(-6),
                             fecha_vencimiento: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
                             precio_compra_unidad_base: item.precio_unitario / 1.18,
-                            stock_actual: 1000,
+                            stock_actual: Math.max(1000, unidadesPendientes),
+                            created_by: finalUsuarioId,
+                        }
+                    });
+                    lotesDisponibles.push(nuevoLote);
+                }
+
+                // Consumir lotes de forma iterativa según fecha de vencimiento FEFO
+                for (const lote of lotesDisponibles) {
+                    if (unidadesPendientes <= 0) break;
+
+                    const descontar = Math.min(lote.stock_actual, unidadesPendientes);
+                    unidadesPendientes -= descontar;
+
+                    await tx.lotes.update({
+                        where: { id: lote.id },
+                        data: {
+                            stock_actual: lote.stock_actual - descontar
+                        }
+                    });
+
+                    await tx.detalles_ventas.create({
+                        data: {
+                            venta_id: venta.id,
+                            producto_presentacion_id: presentacion.id,
+                            lote_id: lote.id,
+                            cantidad: Math.ceil(descontar / Number(presentacion.cantidad_unidad_base || 1)),
+                            precio_unitario_presentacion: item.precio_unitario,
+                            descuento: 0,
+                            subtotal: item.precio_unitario * (descontar / Number(presentacion.cantidad_unidad_base || 1)),
                             created_by: finalUsuarioId,
                         }
                     });
                 }
-
-                const unidadesTotalesADescontar = item.cantidad * Number(presentacion.cantidad_unidad_base || 1);
-                
-                // Descontar stock del lote
-                await tx.lotes.update({
-                    where: { id: lote.id },
-                    data: {
-                        stock_actual: Math.max(0, lote.stock_actual - unidadesTotalesADescontar)
-                    }
-                });
-
-                // Registrar el detalle de venta
-                await tx.detalles_ventas.create({
-                    data: {
-                        venta_id: venta.id,
-                        producto_presentacion_id: presentacion.id,
-                        lote_id: lote.id,
-                        cantidad: item.cantidad,
-                        precio_unitario_presentacion: item.precio_unitario,
-                        descuento: 0,
-                        subtotal: item.precio_unitario * item.cantidad,
-                        created_by: finalUsuarioId,
-                    }
-                });
             }
 
-            // 6. Obtener o crear Método de Pago
+            // 6. Obtener o crear el Método de Pago exacto (EFECTIVO, TARJETA, YAPE_PLIN, TRANSFERENCIA)
             let metodoPago = await tx.metodos_pago.findFirst({
-                where: { deleted_at: null }
+                where: {
+                    nombre: { equals: metodoPagoNombre, mode: 'insensitive' },
+                    deleted_at: null
+                }
             });
 
             if (!metodoPago) {
                 metodoPago = await tx.metodos_pago.create({
                     data: {
-                        nombre: dto.metodo_pago || 'EFECTIVO',
-                        requiere_referencia: false,
+                        nombre: metodoPagoNombre,
+                        requiere_referencia: metodoPagoNombre !== 'EFECTIVO',
                         created_by: finalUsuarioId,
                     }
                 });
             }
 
-            // 7. Registrar el Pago
+            // 7. Registrar el Pago con la referencia y el método exacto
             await tx.pagos.create({
                 data: {
                     venta_id: venta.id,
                     metodo_pago_id: metodoPago.id,
                     monto: dto.total,
-                    referencia: dto.metodo_pago,
+                    referencia: metodoPagoNombre,
                     created_by: finalUsuarioId,
                 }
             });
@@ -194,6 +203,66 @@ export class VentasService {
                 venta_id: venta.id,
                 total: dto.total,
                 tipo_comprobante: dto.tipo_comprobante,
+                metodo_pago: metodoPagoNombre,
+            };
+        });
+    }
+
+    async anular(id: string, usuarioId?: string) {
+        this.logger.log(`Anulando venta con ID: ${id}`);
+
+        return await this.prisma.$transaction(async (tx) => {
+            const venta = await tx.ventas.findFirst({
+                where: { id, deleted_at: null },
+                include: { detalles_ventas: true }
+            });
+
+            if (!venta) {
+                throw new NotFoundException(`Venta con ID ${id} no encontrada`);
+            }
+
+            if (venta.estado === 'ANULADO') {
+                throw new BadRequestException(`La venta ${id} ya fue anulada anteriormente.`);
+            }
+
+            // 1. Marcar venta como ANULADO
+            await tx.ventas.update({
+                where: { id: venta.id },
+                data: {
+                    estado: 'ANULADO',
+                    updated_at: new Date(),
+                    updated_by: usuarioId,
+                }
+            });
+
+            // 2. Reponer stock a los lotes consumidos
+            for (const detalle of venta.detalles_ventas) {
+                if (detalle.lote_id && detalle.cantidad > 0) {
+                    const presentacion = await tx.productos_presentaciones.findFirst({
+                        where: { id: detalle.producto_presentacion_id }
+                    });
+                    const equiv = Number(presentacion?.cantidad_unidad_base || 1);
+                    const unidadesAReponer = detalle.cantidad * equiv;
+
+                    const lote = await tx.lotes.findFirst({
+                        where: { id: detalle.lote_id }
+                    });
+
+                    if (lote) {
+                        await tx.lotes.update({
+                            where: { id: lote.id },
+                            data: {
+                                stock_actual: lote.stock_actual + unidadesAReponer
+                            }
+                        });
+                    }
+                }
+            }
+
+            return {
+                exito: true,
+                mensaje: `Venta ${id} anulada exitosamente y stock repuesto en el inventario.`,
+                venta_id: venta.id
             };
         });
     }
@@ -203,7 +272,9 @@ export class VentasService {
             where: { deleted_at: null },
             include: {
                 detalles_ventas: true,
-                pagos: true,
+                pagos: {
+                    include: { metodos_pago: true }
+                },
                 clientes: true,
             },
             orderBy: { fecha: 'desc' },
@@ -217,6 +288,7 @@ export class VentasService {
             include: {
                 detalles_ventas: {
                     include: {
+                        lotes: true,
                         productos_presentaciones: {
                             include: {
                                 productos_comerciales: true
@@ -224,7 +296,9 @@ export class VentasService {
                         }
                     }
                 },
-                pagos: true,
+                pagos: {
+                    include: { metodos_pago: true }
+                },
                 clientes: true,
             }
         });
