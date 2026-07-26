@@ -12,7 +12,7 @@ async function bootstrap() {
   app.setGlobalPrefix('api'); // Opcional: todas las rutas empiezan con /api
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
-    forbidNonWhitelisted: true,
+    forbidNonWhitelisted: false,
     transform: true,
   }));
   app.enableCors({
