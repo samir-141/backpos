@@ -14,8 +14,26 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ClientesModule } from './modules/clientes/clientes.module';
 import { ReportesModule } from './modules/reportes/reportes.module';
 import { FacturacionModule } from './modules/facturacion/facturacion.module';
+import { AuditModule } from './modules/audit/audit.module';
+import { EventsModule } from './socket/events.module';
+
 @Module({
-  imports: [AuthModule, ProductsModule, PrismaModule, ProductosModule, UsuariosModule, DiagnosticosModule, CatalogosModule, VentasModule, DashboardModule, ClientesModule, ReportesModule, FacturacionModule],
+  imports: [
+    AuthModule,
+    ProductsModule,
+    PrismaModule,
+    ProductosModule,
+    UsuariosModule,
+    DiagnosticosModule,
+    CatalogosModule,
+    VentasModule,
+    DashboardModule,
+    ClientesModule,
+    ReportesModule,
+    FacturacionModule,
+    AuditModule,
+    EventsModule,
+  ],
   controllers: [AppController, TestController],
   providers: [AppService],
 })

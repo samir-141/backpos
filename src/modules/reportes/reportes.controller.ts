@@ -9,7 +9,7 @@ export class ReportesController {
     constructor(private readonly reportesService: ReportesService) { }
 
     @Get('ventas')
-    @ApiOperation({ summary: 'Obtener reporte financiero de ventas y desglose de cobros' })
+    @ApiOperation({ summary: 'Obtener reporte financiero de ventas, ganancia bruta real y desglose de cobros' })
     getReporteVentas(
         @Query() query: QueryReportesDto,
         @Headers('x-sucursal-id') sucursalHeader?: string
@@ -19,12 +19,22 @@ export class ReportesController {
     }
 
     @Get('inventario')
-    @ApiOperation({ summary: 'Obtener reporte de valorización de inventario y control de vencimientos FEFO' })
+    @ApiOperation({ summary: 'Obtener reporte de valorización de inventario, ABC Analysis y control de vencimientos FEFO' })
     getReporteInventario(
         @Query() query: QueryReportesDto,
         @Headers('x-sucursal-id') sucursalHeader?: string
     ) {
         const sucursalId = query.sucursal_id || sucursalHeader;
         return this.reportesService.getReporteInventario({ ...query, sucursal_id: sucursalId });
+    }
+
+    @Get('ple-libro-ventas')
+    @ApiOperation({ summary: 'Generar archivo plano del Libro de Ventas Electrónico (PLE 14.1 SUNAT)' })
+    generarLibroVentasPLE(
+        @Query() query: QueryReportesDto,
+        @Headers('x-sucursal-id') sucursalHeader?: string
+    ) {
+        const sucursalId = query.sucursal_id || sucursalHeader;
+        return this.reportesService.generarLibroVentasPLE({ ...query, sucursal_id: sucursalId });
     }
 }

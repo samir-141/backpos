@@ -30,4 +30,14 @@ export class UpdateProductoDto {
     @IsOptional()
     @IsString()
     presentacion_id?: string;
+
+    @ApiPropertyOptional({ description: 'Registro sanitario DIGEMID' })
+    @IsOptional()
+    @IsString()
+    registro_sanitario?: string;
+
+    @ApiPropertyOptional({ description: 'Nombre comercial del producto' })
+    @IsOptional()
+    @IsString()
+    nombre_comercial?: string;
 }

@@ -1,12 +1,18 @@
 import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateVentaDto } from './dto/create-venta.dto';
+import { AuditService } from '../audit/audit.service';
+import { EventsGateway } from '../../socket/events.gateway';
 
 @Injectable()
 export class VentasService {
     private readonly logger = new Logger(VentasService.name);
 
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly auditService: AuditService,
+        private readonly eventsGateway: EventsGateway,
+    ) { }
 
     async create(dto: CreateVentaDto, sucursalId?: string, usuarioId?: string) {
         const metodoPagoNombre = String(dto.metodo_pago || 'EFECTIVO').trim().toUpperCase();
@@ -113,15 +119,17 @@ export class VentasService {
 
                 let unidadesPendientes = item.cantidad * Number(presentacion.cantidad_unidad_base || 1);
 
-                // Obtener todos los lotes disponibles ordenados por vencimiento (FEFO)
+                // Obtener todos los lotes disponibles ordenados por vencimiento (FEFO) para la sucursal
                 const lotesDisponibles = await tx.lotes.findMany({
                     where: {
                         producto_comercial_id: item.producto_comercial_id,
                         sucursal_id: finalSucursalId,
-                        stock_actual: { gt: 0 },
                         deleted_at: null
                     },
-                    orderBy: { fecha_vencimiento: 'asc' }
+                    orderBy: [
+                        { stock_actual: 'desc' },
+                        { fecha_vencimiento: 'asc' }
+                    ]
                 });
 
                 if (lotesDisponibles.length === 0) {
@@ -132,7 +140,7 @@ export class VentasService {
                             numero_lote: 'LOTE-STD-' + Date.now().toString().slice(-6),
                             fecha_vencimiento: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
                             precio_compra_unidad_base: item.precio_unitario / 1.18,
-                            stock_actual: Math.max(1000, unidadesPendientes),
+                            stock_actual: 0,
                             created_by: finalUsuarioId,
                         }
                     });
@@ -143,13 +151,17 @@ export class VentasService {
                 for (const lote of lotesDisponibles) {
                     if (unidadesPendientes <= 0) break;
 
-                    const descontar = Math.min(lote.stock_actual, unidadesPendientes);
+                    const descontar = lote.stock_actual > 0 
+                        ? Math.min(lote.stock_actual, unidadesPendientes)
+                        : unidadesPendientes; // Si es el único lote, descontar completamente
+
                     unidadesPendientes -= descontar;
+                    const nuevoStock = Math.max(0, lote.stock_actual - descontar);
 
                     await tx.lotes.update({
                         where: { id: lote.id },
                         data: {
-                            stock_actual: lote.stock_actual - descontar
+                            stock_actual: nuevoStock
                         }
                     });
 
@@ -158,10 +170,10 @@ export class VentasService {
                             venta_id: venta.id,
                             producto_presentacion_id: presentacion.id,
                             lote_id: lote.id,
-                            cantidad: Math.ceil(descontar / Number(presentacion.cantidad_unidad_base || 1)),
+                            cantidad: item.cantidad,
                             precio_unitario_presentacion: item.precio_unitario,
                             descuento: 0,
-                            subtotal: item.precio_unitario * (descontar / Number(presentacion.cantidad_unidad_base || 1)),
+                            subtotal: item.precio_unitario * item.cantidad,
                             created_by: finalUsuarioId,
                         }
                     });
@@ -197,6 +209,18 @@ export class VentasService {
                 }
             });
 
+            // Audit Log (Sección 23 Documento 02)
+            await this.auditService.registrar({
+                usuario_id: finalUsuarioId,
+                accion: 'VENTA_CREADA',
+                tabla: 'ventas',
+                observacion: `Venta registrada por S/ ${dto.total} - ${dto.tipo_comprobante} (${metodoPagoNombre})`,
+            });
+
+            // WebSocket Real-time Event (Sección 22 Documento 02)
+            this.eventsGateway.emitirEvento('venta.creada', { venta_id: venta.id, total: dto.total });
+            this.eventsGateway.emitirEvento('stock.actualizado', { sucursal_id: finalSucursalId });
+
             return {
                 exito: true,
                 mensaje: 'Venta registrada correctamente',
@@ -211,7 +235,7 @@ export class VentasService {
     async anular(id: string, usuarioId?: string) {
         this.logger.log(`Anulando venta con ID: ${id}`);
 
-        return await this.prisma.$transaction(async (tx) => {
+        const res = await this.prisma.$transaction(async (tx) => {
             const venta = await tx.ventas.findFirst({
                 where: { id, deleted_at: null },
                 include: { detalles_ventas: true }
@@ -265,11 +289,28 @@ export class VentasService {
                 venta_id: venta.id
             };
         });
+
+        // Audit Log & Event
+        await this.auditService.registrar({
+            usuario_id: usuarioId,
+            accion: 'VENTA_ANULADA',
+            tabla: 'ventas',
+            observacion: `Venta ${id} anulada exitosamente.`,
+        });
+        this.eventsGateway.emitirEvento('venta.anulada', { venta_id: id });
+        this.eventsGateway.emitirEvento('stock.actualizado', { venta_id: id });
+
+        return res;
     }
 
-    async findAll() {
+    async findAll(sucursalId?: string) {
+        const where: any = { deleted_at: null };
+        if (sucursalId) {
+            where.cajas = { sucursal_id: sucursalId };
+        }
+
         return await this.prisma.ventas.findMany({
-            where: { deleted_at: null },
+            where,
             include: {
                 detalles_ventas: true,
                 pagos: {

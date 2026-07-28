@@ -92,4 +92,9 @@ export class CreateProductoDto {
     @IsOptional()
     @IsString()
     codigo_barras?: string;
+
+    @ApiPropertyOptional({ description: 'Registro sanitario DIGEMID' })
+    @IsOptional()
+    @IsString()
+    registro_sanitario?: string;
 }

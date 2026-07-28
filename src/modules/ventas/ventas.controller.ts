@@ -20,8 +20,8 @@ export class VentasController {
 
     @Get()
     @ApiOperation({ summary: 'Obtener historial reciente de ventas' })
-    findAll() {
-        return this.ventasService.findAll();
+    findAll(@Headers('x-sucursal-id') sucursalId?: string) {
+        return this.ventasService.findAll(sucursalId);
     }
 
     @Get(':id')

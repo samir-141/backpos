@@ -102,6 +102,7 @@ export class ProductoMapper {
             stock_total: toInt(row.stock_total), // ✅ Convertido (viene de SUM)
             lote_fefo_numero: row.lote_fefo_numero,
             lote_fefo_vencimiento: row.lote_fefo_vencimiento,
+            registro_sanitario: row.registro_sanitario || null,
         };
     }
 }

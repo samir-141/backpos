@@ -1,5 +1,5 @@
 // src/modules/productos/productos.controller.ts
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Headers, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ProductosService } from './productos.service';
 import { QueryProductosDto } from './dto/query-productos.dto';
@@ -13,8 +13,12 @@ export class ProductosController {
 
     @Get()
     @ApiOperation({ summary: 'Listar productos con paginación, filtros y ordenamiento' })
-    findAll(@Query() query: QueryProductosDto) {
-        return this.productosService.findAll(query);
+    findAll(
+        @Query() query: QueryProductosDto,
+        @Headers('x-sucursal-id') sucursalHeader?: string
+    ) {
+        const sucursalId = query.sucursal_id || sucursalHeader;
+        return this.productosService.findAll({ ...query, sucursal_id: sucursalId });
     }
 
     @Get('sucursal/:sucursalId')

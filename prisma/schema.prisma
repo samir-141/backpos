@@ -57,6 +57,23 @@ model clientes {
   direccion                              String?
   telefono                               String?   @db.VarChar(20)
   email                                  String?   @db.VarChar(100)
+  tipo_cliente                           String?   @default("NATURAL") @db.VarChar(20)
+  condicion_contribuyente               String?   @default("HABIDO") @db.VarChar(20)
+  estado_sunat                           String?   @db.VarChar(50)
+  fecha_consulta_sunat                   DateTime? @db.Timestamptz(6)
+  estado                                 String?   @default("ACTIVO") @db.VarChar(20)
+  limite_credito                         Decimal?  @default(0) @db.Decimal(15, 2)
+  dias_credito                           Int?      @default(0)
+  saldo_actual                           Decimal?  @default(0) @db.Decimal(15, 2)
+  estado_credito                         String?   @default("AL CORRIENTE") @db.VarChar(20)
+  whatsapp                               String?   @db.VarChar(20)
+  contacto_principal                     String?   @db.VarChar(150)
+  cargo_contacto                         String?   @db.VarChar(100)
+  representante_legal                    String?   @db.VarChar(150)
+  dni_representante                      String?   @db.VarChar(20)
+  fecha_nacimiento                       DateTime? @db.Date
+  observaciones                          String?
+  origen                                 String?   @db.VarChar(50)
   created_at                             DateTime? @default(now()) @db.Timestamptz(6)
   updated_at                             DateTime? @default(now()) @db.Timestamptz(6)
   deleted_at                             DateTime? @db.Timestamptz(6)

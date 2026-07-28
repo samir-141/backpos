@@ -284,6 +284,7 @@ export class ProductosService {
                     nombre_comercial: dto.nombre_comercial!,
                     sku: dto.sku!,
                     codigo_interno: dto.codigo_interno || null,
+                    registro_sanitario: dto.registro_sanitario || null,
                     medicamento_id: medicamento.id,
                     laboratorio_id: dto.laboratorio_id!,
                     categoria_id: dto.categoria_id!,
@@ -445,7 +446,19 @@ export class ProductosService {
 
         // 3. Ejecutar actualizaciones en transacción
         const updatedPresentacionId = await this.prisma.$transaction(async (tx) => {
-            // A. Si se envían flags del medicamento, actualizar el medicamento correspondiente
+            // A. Si se envían datos del producto comercial (nombre_comercial, registro_sanitario)
+            if (dto.nombre_comercial !== undefined || dto.registro_sanitario !== undefined) {
+                const updateProdComercial: any = {};
+                if (dto.nombre_comercial !== undefined) updateProdComercial.nombre_comercial = dto.nombre_comercial;
+                if (dto.registro_sanitario !== undefined) updateProdComercial.registro_sanitario = dto.registro_sanitario || null;
+
+                await tx.productos_comerciales.update({
+                    where: { id },
+                    data: updateProdComercial
+                });
+            }
+
+            // B. Si se envían flags del medicamento, actualizar el medicamento correspondiente
             if (dto.requiere_receta !== undefined || dto.afecto_igv !== undefined) {
                 const updateData: any = {};
                 if (dto.requiere_receta !== undefined) updateData.requiere_receta = dto.requiere_receta;

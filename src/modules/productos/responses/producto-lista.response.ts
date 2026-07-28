@@ -24,6 +24,7 @@ export class ProductoListaItemResponse {
     @ApiProperty() stock_total: number;
     @ApiProperty() lote_fefo_numero: string | null;
     @ApiProperty() lote_fefo_vencimiento: Date | null;
+    @ApiProperty() registro_sanitario: string | null;
 }
 
 export class PaginationMetaResponse {

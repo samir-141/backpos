@@ -27,4 +27,24 @@ export class QueryClientesDto {
     @IsString()
     @IsOptional()
     tipo_documento?: string;
+
+    @ApiPropertyOptional({ description: 'Filtrar por tipo de cliente (NATURAL, JURIDICO, HOSPITAL, CLINICA, DROGUERIA)' })
+    @IsString()
+    @IsOptional()
+    tipo_cliente?: string;
+
+    @ApiPropertyOptional({ description: 'Filtrar por estado (ACTIVO, INACTIVO, BLOQUEADO)' })
+    @IsString()
+    @IsOptional()
+    estado?: string;
+
+    @ApiPropertyOptional({ description: 'Filtrar por estado crediticio (AL CORRIENTE, MOROSO, BLOQUEADO)' })
+    @IsString()
+    @IsOptional()
+    estado_credito?: string;
+
+    @ApiPropertyOptional({ description: 'Filtrar por condición SUNAT (HABIDO, NO HABIDO, SUSPENDED)' })
+    @IsString()
+    @IsOptional()
+    condicion_contribuyente?: string;
 }

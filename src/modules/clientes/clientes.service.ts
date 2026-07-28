@@ -11,7 +11,7 @@ export class ClientesService {
     constructor(private readonly prisma: PrismaService) { }
 
     async findAll(query: QueryClientesDto) {
-        const { page = 1, limit = 20, buscar, tipo_documento } = query;
+        const { page = 1, limit = 20, buscar, tipo_documento, tipo_cliente, estado, estado_credito, condicion_contribuyente } = query;
         const skip = (page - 1) * limit;
 
         this.logger.log(`Listando clientes - Página: ${page}, Límite: ${limit}`);
@@ -20,9 +20,11 @@ export class ClientesService {
             deleted_at: null,
         };
 
-        if (tipo_documento) {
-            where.tipo_documento = tipo_documento;
-        }
+        if (tipo_documento) where.tipo_documento = tipo_documento;
+        if (tipo_cliente) where.tipo_cliente = tipo_cliente;
+        if (estado) where.estado = estado;
+        if (estado_credito) where.estado_credito = estado_credito;
+        if (condicion_contribuyente) where.condicion_contribuyente = condicion_contribuyente;
 
         if (buscar) {
             where.OR = [
@@ -30,6 +32,7 @@ export class ClientesService {
                 { numero_documento: { contains: buscar, mode: 'insensitive' } },
                 { telefono: { contains: buscar, mode: 'insensitive' } },
                 { email: { contains: buscar, mode: 'insensitive' } },
+                { whatsapp: { contains: buscar, mode: 'insensitive' } },
             ];
         }
 
@@ -68,6 +71,22 @@ export class ClientesService {
                 direccion: c.direccion,
                 telefono: c.telefono,
                 email: c.email,
+                tipo_cliente: c.tipo_cliente || 'NATURAL',
+                condicion_contribuyente: c.condicion_contribuyente || 'HABIDO',
+                estado_sunat: c.estado_sunat || 'ACTIVO',
+                estado: c.estado || 'ACTIVO',
+                limite_credito: Number(c.limite_credito || 0),
+                dias_credito: Number(c.dias_credito || 0),
+                saldo_actual: Number(c.saldo_actual || 0),
+                estado_credito: c.estado_credito || 'AL CORRIENTE',
+                whatsapp: c.whatsapp,
+                contacto_principal: c.contacto_principal,
+                cargo_contacto: c.cargo_contacto,
+                representante_legal: c.representante_legal,
+                dni_representante: c.dni_representante,
+                fecha_nacimiento: c.fecha_nacimiento,
+                observaciones: c.observaciones,
+                origen: c.origen,
                 total_compras: totalCompras,
                 monto_total_comprado: montoTotalComprado,
                 ultima_compra: ultimaCompra,
@@ -132,6 +151,8 @@ export class ClientesService {
                 direccion: clienteLocal.direccion || '',
                 telefono: clienteLocal.telefono || '',
                 email: clienteLocal.email || '',
+                tipo_cliente: clienteLocal.tipo_cliente || 'NATURAL',
+                condicion_contribuyente: clienteLocal.condicion_contribuyente || 'HABIDO',
             };
         }
 
@@ -150,6 +171,8 @@ export class ClientesService {
                             numero_documento: numDoc,
                             nombre: nombreCompleto,
                             direccion: data.direccion || '',
+                            tipo_cliente: 'NATURAL',
+                            condicion_contribuyente: 'HABIDO',
                         };
                     }
                 }
@@ -166,6 +189,9 @@ export class ClientesService {
                             numero_documento: numDoc,
                             nombre: razonSocial,
                             direccion: data.direccion || data.direccionCompleta || '',
+                            tipo_cliente: 'JURIDICO',
+                            condicion_contribuyente: data.condicion || 'HABIDO',
+                            estado_sunat: data.estado || 'ACTIVO',
                         };
                     }
                 }
@@ -181,9 +207,10 @@ export class ClientesService {
             numero_documento: numDoc,
             nombre: '',
             direccion: '',
+            tipo_cliente: 'NATURAL',
+            condicion_contribuyente: 'HABIDO',
         };
     }
-
 
     async findOne(id: string) {
         const cliente = await this.prisma.clientes.findFirst({
@@ -228,7 +255,6 @@ export class ClientesService {
     async create(dto: CreateClienteDto, usuarioId?: string) {
         this.logger.log(`Creando cliente: ${dto.nombre} (${dto.tipo_documento}: ${dto.numero_documento})`);
 
-        // Validar documento único activo
         const existente = await this.prisma.clientes.findFirst({
             where: {
                 tipo_documento: dto.tipo_documento,
@@ -249,6 +275,22 @@ export class ClientesService {
                 direccion: dto.direccion?.trim() || null,
                 telefono: dto.telefono?.trim() || null,
                 email: dto.email?.trim() || null,
+                tipo_cliente: dto.tipo_cliente || 'NATURAL',
+                condicion_contribuyente: dto.condicion_contribuyente || 'HABIDO',
+                estado_sunat: dto.estado_sunat || 'ACTIVO',
+                estado: dto.estado || 'ACTIVO',
+                limite_credito: dto.limite_credito !== undefined ? dto.limite_credito : 0,
+                dias_credito: dto.dias_credito !== undefined ? dto.dias_credito : 0,
+                saldo_actual: dto.saldo_actual !== undefined ? dto.saldo_actual : 0,
+                estado_credito: dto.estado_credito || 'AL CORRIENTE',
+                whatsapp: dto.whatsapp?.trim() || null,
+                contacto_principal: dto.contacto_principal?.trim() || null,
+                cargo_contacto: dto.cargo_contacto?.trim() || null,
+                representante_legal: dto.representante_legal?.trim() || null,
+                dni_representante: dto.dni_representante?.trim() || null,
+                fecha_nacimiento: dto.fecha_nacimiento ? new Date(dto.fecha_nacimiento) : null,
+                observaciones: dto.observaciones?.trim() || null,
+                origen: dto.origen?.trim() || null,
                 created_by: usuarioId,
             }
         });
@@ -280,18 +322,37 @@ export class ClientesService {
             }
         }
 
+        const dataUpdate: any = {
+            updated_by: usuarioId,
+            updated_at: new Date(),
+        };
+
+        if (dto.tipo_documento) dataUpdate.tipo_documento = dto.tipo_documento;
+        if (dto.numero_documento) dataUpdate.numero_documento = dto.numero_documento.trim();
+        if (dto.nombre) dataUpdate.nombre = dto.nombre.trim();
+        if (dto.direccion !== undefined) dataUpdate.direccion = dto.direccion?.trim() || null;
+        if (dto.telefono !== undefined) dataUpdate.telefono = dto.telefono?.trim() || null;
+        if (dto.email !== undefined) dataUpdate.email = dto.email?.trim() || null;
+        if (dto.tipo_cliente !== undefined) dataUpdate.tipo_cliente = dto.tipo_cliente;
+        if (dto.condicion_contribuyente !== undefined) dataUpdate.condicion_contribuyente = dto.condicion_contribuyente;
+        if (dto.estado_sunat !== undefined) dataUpdate.estado_sunat = dto.estado_sunat;
+        if (dto.estado !== undefined) dataUpdate.estado = dto.estado;
+        if (dto.limite_credito !== undefined) dataUpdate.limite_credito = dto.limite_credito;
+        if (dto.dias_credito !== undefined) dataUpdate.dias_credito = dto.dias_credito;
+        if (dto.saldo_actual !== undefined) dataUpdate.saldo_actual = dto.saldo_actual;
+        if (dto.estado_credito !== undefined) dataUpdate.estado_credito = dto.estado_credito;
+        if (dto.whatsapp !== undefined) dataUpdate.whatsapp = dto.whatsapp?.trim() || null;
+        if (dto.contacto_principal !== undefined) dataUpdate.contacto_principal = dto.contacto_principal?.trim() || null;
+        if (dto.cargo_contacto !== undefined) dataUpdate.cargo_contacto = dto.cargo_contacto?.trim() || null;
+        if (dto.representante_legal !== undefined) dataUpdate.representante_legal = dto.representante_legal?.trim() || null;
+        if (dto.dni_representante !== undefined) dataUpdate.dni_representante = dto.dni_representante?.trim() || null;
+        if (dto.fecha_nacimiento !== undefined) dataUpdate.fecha_nacimiento = dto.fecha_nacimiento ? new Date(dto.fecha_nacimiento) : null;
+        if (dto.observaciones !== undefined) dataUpdate.observaciones = dto.observaciones?.trim() || null;
+        if (dto.origen !== undefined) dataUpdate.origen = dto.origen?.trim() || null;
+
         return await this.prisma.clientes.update({
             where: { id },
-            data: {
-                ...(dto.tipo_documento ? { tipo_documento: dto.tipo_documento } : {}),
-                ...(dto.numero_documento ? { numero_documento: dto.numero_documento.trim() } : {}),
-                ...(dto.nombre ? { nombre: dto.nombre.trim() } : {}),
-                ...(dto.direccion !== undefined ? { direccion: dto.direccion?.trim() || null } : {}),
-                ...(dto.telefono !== undefined ? { telefono: dto.telefono?.trim() || null } : {}),
-                ...(dto.email !== undefined ? { email: dto.email?.trim() || null } : {}),
-                updated_by: usuarioId,
-                updated_at: new Date(),
-            }
+            data: dataUpdate
         });
     }
 
