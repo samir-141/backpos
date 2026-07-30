@@ -975,3 +975,22 @@ model ventas {
   @@index([fecha], map: "idx_ventas_fecha", where: raw("(deleted_at IS NULL)"))
   @@index([usuario_id], map: "idx_ventas_usuario_id", where: raw("(deleted_at IS NULL)"))
 }
+
+/// Snapshot inmutable para compartir comprobantes sin almacenar el PDF permanentemente.
+model comprobantes_publicos {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  venta_id          String   @unique @db.Uuid
+  botica_id         String   @db.Uuid
+  token_publico     String   @unique @db.VarChar(96)
+  plantilla_version String   @default("a4-v1") @db.VarChar(30)
+  snapshot          Json
+  hash_documento    String   @db.VarChar(64)
+  emitido_at        DateTime @default(now()) @db.Timestamptz(6)
+  expira_at         DateTime? @db.Timestamptz(6)
+  anulado_at        DateTime? @db.Timestamptz(6)
+  abierto_at        DateTime? @db.Timestamptz(6)
+  aperturas         Int      @default(0)
+
+  @@index([botica_id])
+  @@index([token_publico])
+}

@@ -214,6 +214,63 @@ export class UsuariosService {
         skipDuplicates: true,
       });
     }
+
+    // --- SEED PERMISOS ---
+    const permisosBase = [
+      { codigo: 'ventas', descripcion: 'Ventas (POS)' },
+      { codigo: 'inventario', descripcion: 'Inventario & Productos' },
+      { codigo: 'clientes', descripcion: 'Clientes' },
+      { codigo: 'reportes', descripcion: 'Reportes & Analítica' },
+      { codigo: 'admin', descripcion: 'Administración & ERP' },
+    ];
+    const permisosExistentes = await this.prisma.permisos.findMany({
+      where: { botica_id: boticaId, deleted_at: null },
+      select: { codigo: true },
+    });
+    const codigosExistentes = new Set(permisosExistentes.map((p) => p.codigo));
+    const permisosFaltantes = permisosBase.filter((p) => !codigosExistentes.has(p.codigo));
+    if (permisosFaltantes.length > 0) {
+      await this.prisma.permisos.createMany({
+        data: permisosFaltantes.map((p) => ({
+          botica_id: boticaId,
+          codigo: p.codigo,
+          descripcion: p.descripcion,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    const todosPermisos = await this.prisma.permisos.findMany({
+      where: { botica_id: boticaId, deleted_at: null },
+    });
+
+    // --- SEED ROL PERMISOS ---
+    const rolesConPermisos = await this.prisma.roles.findMany({
+      where: { botica_id: boticaId, deleted_at: null },
+      include: { rol_permisos: true },
+    });
+
+    for (const r of rolesConPermisos) {
+      if (r.rol_permisos.length === 0) {
+        const nombreUpper = r.nombre.toUpperCase();
+        const esAdmin = nombreUpper === 'ADMINISTRADOR';
+        const codigosAsignar = esAdmin
+          ? ['ventas', 'inventario', 'clientes', 'reportes', 'admin']
+          : ['ventas', 'inventario', 'clientes'];
+
+        const permisosAAsignar = todosPermisos.filter((p) => codigosAsignar.includes(p.codigo));
+        if (permisosAAsignar.length > 0) {
+          await this.prisma.rol_permisos.createMany({
+            data: permisosAAsignar.map((p) => ({
+              rol_id: r.id,
+              permiso_id: p.id,
+              botica_id: boticaId,
+            })),
+          });
+        }
+      }
+    }
+
     return await this.prisma.roles.findMany({
       where: { botica_id: boticaId, deleted_at: null },
       include: {
@@ -271,6 +328,7 @@ export class UsuariosService {
     await this.prisma.cajas.create({
       data: {
         sucursal_id: sucursal.id,
+        botica_id: boticaId,
         nombre: `Caja Principal - ${sucursal.nombre}`,
         estado: 'ABIERTA',
         created_by: usuarioId,
@@ -282,5 +340,40 @@ export class UsuariosService {
       mensaje: 'Sucursal registrada correctamente',
       sucursal_id: sucursal.id,
     };
+  }
+
+  async actualizarRolPermisos(boticaId: string, rolId: string, dto: { permisosIds: string[] }) {
+    this.logger.log(`Actualizando permisos para el rol ${rolId}`);
+
+    const rol = await this.prisma.roles.findFirst({
+      where: { id: rolId, botica_id: boticaId, deleted_at: null },
+    });
+    if (!rol) {
+      throw new NotFoundException('Rol no encontrado');
+    }
+
+    // Delete current permissions
+    await this.prisma.rol_permisos.deleteMany({
+      where: { rol_id: rolId, botica_id: boticaId },
+    });
+
+    // Create new permissions
+    if (dto.permisosIds && dto.permisosIds.length > 0) {
+      const validPermisos = await this.prisma.permisos.findMany({
+        where: { id: { in: dto.permisosIds }, botica_id: boticaId, deleted_at: null },
+      });
+
+      if (validPermisos.length > 0) {
+        await this.prisma.rol_permisos.createMany({
+          data: validPermisos.map((p) => ({
+            rol_id: rolId,
+            permiso_id: p.id,
+            botica_id: boticaId,
+          })),
+        });
+      }
+    }
+
+    return { mensaje: 'Permisos actualizados correctamente' };
   }
 }

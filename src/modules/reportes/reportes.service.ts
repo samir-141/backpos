@@ -203,6 +203,10 @@ export class ReportesService {
         fecha: v.fecha,
         tipo_comprobante: tipoComp,
         cliente_nombre: v.clientes?.nombre || 'CLIENTE GENERAL',
+        cliente_id: v.clientes?.id || null,
+        // WhatsApp tiene prioridad porque es el canal de envío; si no existe,
+        // se usa el teléfono registrado del cliente.
+        cliente_telefono: v.clientes?.whatsapp || v.clientes?.telefono || null,
         cliente_documento: v.clientes
           ? `${v.clientes.tipo_documento}: ${v.clientes.numero_documento}`
           : 'S/D',

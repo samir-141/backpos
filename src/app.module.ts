@@ -16,9 +16,11 @@ import { ReportesModule } from './modules/reportes/reportes.module';
 import { FacturacionModule } from './modules/facturacion/facturacion.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { EventsModule } from './socket/events.module';
+import { ComprobantesPublicosModule } from './modules/comprobantes-publicos/comprobantes-publicos.module';
 import { CajasModule } from './modules/cajas/cajas.module';
 import { PosventaModule } from './modules/posventa/posventa.module';
 import { GastosModule } from './modules/gastos/gastos.module';
+import { SeriesDocumentosModule } from './modules/series-documentos/series-documentos.module';
 
 @Module({
   imports: [
@@ -36,9 +38,11 @@ import { GastosModule } from './modules/gastos/gastos.module';
     FacturacionModule,
     AuditModule,
     EventsModule,
+    ComprobantesPublicosModule,
     CajasModule,
     PosventaModule,
     GastosModule,
+    SeriesDocumentosModule,
   ],
   controllers: [AppController, TestController],
   providers: [AppService],

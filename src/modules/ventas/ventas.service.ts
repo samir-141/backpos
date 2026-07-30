@@ -8,6 +8,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateVentaDto } from './dto/create-venta.dto';
 import { AuditService } from '../audit/audit.service';
 import { EventsGateway } from '../../socket/events.gateway';
+import { randomBytes } from 'crypto';
+import { hashSnapshot } from '../comprobantes-publicos/comprobantes-publicos.service';
 
 @Injectable()
 export class VentasService {
@@ -106,8 +108,9 @@ export class VentasService {
 
       // 3. Obtener o crear Cliente si se proveyó
       let clienteId: string | null = null;
+      let cliente: any = null;
       if (dto.datos_cliente && dto.datos_cliente.numero_documento) {
-        let cliente = await tx.clientes.findFirst({
+        cliente = await tx.clientes.findFirst({
           where: {
             numero_documento: dto.datos_cliente.numero_documento,
             botica_id: boticaId,
@@ -117,9 +120,9 @@ export class VentasService {
 
         if (!cliente) {
           cliente = await tx.clientes.create({
-          data: {
-            botica_id: boticaId,
-            tipo_documento: dto.datos_cliente.tipo_documento || 'DNI',
+            data: {
+              botica_id: boticaId,
+              tipo_documento: dto.datos_cliente.tipo_documento || 'DNI',
               numero_documento: dto.datos_cliente.numero_documento,
               nombre: dto.datos_cliente.nombre_razon_social || 'CLIENTE POS',
               direccion: dto.datos_cliente.direccion || null,
@@ -317,6 +320,30 @@ export class VentasService {
         },
       });
 
+      // Snapshot inmutable: el enlace público no depende de datos que puedan cambiar luego.
+      const [boticaSnapshot, detallesSnapshot] = await Promise.all([
+        tx.boticas.findUnique({ where: { id: boticaId }, select: { nombre: true, razon_social: true, ruc: true, direccion: true, telefono: true } }),
+        tx.detalles_ventas.findMany({
+          where: { venta_id: venta.id, deleted_at: null },
+          include: { productos_presentaciones: { include: { productos_comerciales: true, unidades_presentacion: true } } },
+        }),
+      ]);
+      const snapshot = {
+        version: 'a4-v1', venta_id: venta.id, emitido_at: venta.fecha,
+        tipo_comprobante: dto.tipo_comprobante, metodo_pago: metodoPagoNombre,
+        emisor: boticaSnapshot,
+        cliente: cliente ? { nombre: cliente.nombre, documento: `${cliente.tipo_documento}: ${cliente.numero_documento}`, direccion: cliente.direccion } : { nombre: 'CLIENTE GENERAL' },
+        items: detallesSnapshot.map((d) => ({
+          descripcion: d.productos_presentaciones.productos_comerciales.nombre_comercial,
+          presentacion: d.productos_presentaciones.unidades_presentacion.nombre,
+          cantidad: d.cantidad, precio_unitario: Number(d.precio_unitario_presentacion), subtotal: Number(d.subtotal),
+        })),
+        totales: { subtotal: Number(venta.subtotal), igv: Number(venta.igv), total: Number(venta.total) },
+      };
+      const hashDocumento = hashSnapshot(snapshot);
+      const tokenPublico = randomBytes(32).toString('base64url');
+      await tx.comprobantes_publicos.create({ data: { venta_id: venta.id, botica_id: boticaId, token_publico: tokenPublico, plantilla_version: 'a4-v1', snapshot, hash_documento: hashDocumento } });
+
       // Audit Log (Sección 23 Documento 02)
       await this.auditService.registrar({
         usuario_id: finalUsuarioId,
@@ -341,6 +368,8 @@ export class VentasService {
         total: dto.total,
         tipo_comprobante: dto.tipo_comprobante,
         metodo_pago: metodoPagoNombre,
+        comprobante_token: tokenPublico,
+        comprobante_url: `/c/${tokenPublico}`,
       };
     });
   }
@@ -372,6 +401,12 @@ export class VentasService {
           updated_at: new Date(),
           updated_by: usuarioId,
         },
+      });
+
+      // Un comprobante anulado nunca debe seguir siendo accesible con su enlace público.
+      await tx.comprobantes_publicos.updateMany({
+        where: { venta_id: venta.id, botica_id: boticaId, anulado_at: null },
+        data: { anulado_at: new Date() },
       });
 
       // 2. Reponer stock a los lotes consumidos

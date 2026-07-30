@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Patch,
   Delete,
   Body,
@@ -34,6 +35,16 @@ export class UsuariosController {
   @ApiOperation({ summary: 'Listar roles del sistema y sus permisos' })
   getRoles(@Request() req: any) {
     return this.usuariosService.getRoles(req.botica_id);
+  }
+
+  @Put('roles/:rolId/permisos')
+  @ApiOperation({ summary: 'Actualizar los permisos asignados a un rol' })
+  actualizarRolPermisos(
+    @Param('rolId') rolId: string,
+    @Body() body: { permisosIds: string[] },
+    @Request() req: any,
+  ) {
+    return this.usuariosService.actualizarRolPermisos(req.botica_id, rolId, body);
   }
 
   @Get('sucursales')
