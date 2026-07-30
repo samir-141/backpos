@@ -5,9 +5,9 @@ import { ProductosService } from './productos.service';
 import { PrismaModule } from '../../prisma/prisma.module'; // Ajusta la ruta
 
 @Module({
-    imports: [PrismaModule],
-    controllers: [ProductosController],
-    providers: [ProductosService],
-    exports: [ProductosService],
+  imports: [PrismaModule],
+  controllers: [ProductosController],
+  providers: [ProductosService],
+  exports: [ProductosService],
 })
-export class ProductosModule { }
+export class ProductosModule {}

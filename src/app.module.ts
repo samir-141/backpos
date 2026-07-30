@@ -16,6 +16,9 @@ import { ReportesModule } from './modules/reportes/reportes.module';
 import { FacturacionModule } from './modules/facturacion/facturacion.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { EventsModule } from './socket/events.module';
+import { CajasModule } from './modules/cajas/cajas.module';
+import { PosventaModule } from './modules/posventa/posventa.module';
+import { GastosModule } from './modules/gastos/gastos.module';
 
 @Module({
   imports: [
@@ -33,12 +36,11 @@ import { EventsModule } from './socket/events.module';
     FacturacionModule,
     AuditModule,
     EventsModule,
+    CajasModule,
+    PosventaModule,
+    GastosModule,
   ],
   controllers: [AppController, TestController],
   providers: [AppService],
 })
-export class AppModule { }
-
-
-
-
+export class AppModule {}

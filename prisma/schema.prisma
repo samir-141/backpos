@@ -14,6 +14,7 @@ datasource db {
 model cajas {
   id                                  String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   sucursal_id                         String             @db.Uuid
+  botica_id                           String             @db.Uuid
   nombre                              String             @db.VarChar(50)
   estado                              String             @default("CERRADA") @db.VarChar(20)
   created_at                          DateTime?          @default(now()) @db.Timestamptz(6)
@@ -26,14 +27,18 @@ model cajas {
   usuarios_cajas_created_byTousuarios usuarios?          @relation("cajas_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_cajas_deleted_byTousuarios usuarios?          @relation("cajas_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   sucursales                          sucursales         @relation(fields: [sucursal_id], references: [id], onUpdate: NoAction)
+  boticas                             boticas            @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   usuarios_cajas_updated_byTousuarios usuarios?          @relation("cajas_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   movimientos_caja                    movimientos_caja[]
   ventas                              ventas[]
+
+  @@index([botica_id], map: "idx_cajas_botica_id")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model categorias {
   id                                       String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                                String                  @db.Uuid
   nombre                                   String                  @unique(map: "idx_categorias_nombre_activo", where: raw("(deleted_at IS NULL)")) @db.VarChar(100)
   created_at                               DateTime?               @default(now()) @db.Timestamptz(6)
   updated_at                               DateTime?               @default(now()) @db.Timestamptz(6)
@@ -42,15 +47,19 @@ model categorias {
   updated_by                               String?                 @db.Uuid
   deleted_by                               String?                 @db.Uuid
   version                                  Int                     @default(1)
+  boticas                                  boticas                 @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   usuarios_categorias_created_byTousuarios usuarios?               @relation("categorias_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_categorias_deleted_byTousuarios usuarios?               @relation("categorias_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   usuarios_categorias_updated_byTousuarios usuarios?               @relation("categorias_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   productos_comerciales                    productos_comerciales[]
+
+  @@index([botica_id], map: "idx_categorias_botica_id")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model clientes {
   id                                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                              String    @db.Uuid
   tipo_documento                         String    @db.VarChar(10)
   numero_documento                       String    @db.VarChar(20)
   nombre                                 String    @db.VarChar(150)
@@ -81,12 +90,14 @@ model clientes {
   updated_by                             String?   @db.Uuid
   deleted_by                             String?   @db.Uuid
   version                                Int       @default(1)
+  boticas                                boticas   @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   usuarios_clientes_created_byTousuarios usuarios? @relation("clientes_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_clientes_deleted_byTousuarios usuarios? @relation("clientes_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   usuarios_clientes_updated_byTousuarios usuarios? @relation("clientes_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   ventas                                 ventas[]
 
-  @@unique([tipo_documento, numero_documento], map: "idx_clientes_documento_activo", where: raw("(deleted_at IS NULL)"))
+  @@unique([tipo_documento, numero_documento, botica_id], map: "idx_clientes_documento_activo", where: raw("(deleted_at IS NULL)"))
+  @@index([botica_id], map: "idx_clientes_botica_id")
   @@index([numero_documento], map: "idx_clientes_numero_documento", where: raw("(deleted_at IS NULL)"))
 }
 
@@ -96,6 +107,7 @@ model compras {
   proveedor_id                          String             @db.Uuid
   usuario_id                            String             @db.Uuid
   sucursal_id                           String             @db.Uuid
+  botica_id                             String             @db.Uuid
   fecha                                 DateTime           @default(now()) @db.Timestamptz(6)
   serie                                 String             @db.VarChar(10)
   numero                                String             @db.VarChar(20)
@@ -109,6 +121,7 @@ model compras {
   updated_by                            String?            @db.Uuid
   deleted_by                            String?            @db.Uuid
   version                               Int                @default(1)
+  boticas                               boticas            @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   usuarios_compras_created_byTousuarios usuarios?          @relation("compras_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_compras_deleted_byTousuarios usuarios?          @relation("compras_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   proveedores                           proveedores        @relation(fields: [proveedor_id], references: [id], onUpdate: NoAction)
@@ -118,6 +131,7 @@ model compras {
   detalles_compras                      detalles_compras[]
 
   @@index([fecha], map: "idx_compras_fecha", where: raw("(deleted_at IS NULL)"))
+  @@index([botica_id], map: "idx_compras_botica_id")
   @@index([proveedor_id], map: "idx_compras_proveedor_id", where: raw("(deleted_at IS NULL)"))
   @@index([sucursal_id], map: "idx_compras_sucursal_id", where: raw("(deleted_at IS NULL)"))
   @@index([usuario_id], map: "idx_compras_usuario_id", where: raw("(deleted_at IS NULL)"))
@@ -128,6 +142,7 @@ model compras {
 model detalles_compras {
   id                                             String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   compra_id                                      String                   @db.Uuid
+  botica_id                                      String                   @db.Uuid
   producto_presentacion_id                       String                   @db.Uuid
   cantidad                                       Int
   precio_unitario                                Decimal                  @db.Decimal(15, 4)
@@ -138,6 +153,7 @@ model detalles_compras {
   updated_by                                     String?                  @db.Uuid
   deleted_by                                     String?                  @db.Uuid
   version                                        Int                      @default(1)
+  boticas                                        boticas                  @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   compras                                        compras                  @relation(fields: [compra_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   usuarios_detalles_compras_created_byTousuarios usuarios?                @relation("detalles_compras_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_detalles_compras_deleted_byTousuarios usuarios?                @relation("detalles_compras_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
@@ -145,6 +161,7 @@ model detalles_compras {
   usuarios_detalles_compras_updated_byTousuarios usuarios?                @relation("detalles_compras_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   lotes                                          lotes[]
 
+  @@index([botica_id], map: "idx_detalles_compras_botica_id")
   @@index([compra_id], map: "idx_detalles_compras_compra_id", where: raw("(deleted_at IS NULL)"))
 }
 
@@ -153,10 +170,12 @@ model detalles_compras {
 model detalles_ventas {
   id                                            String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   venta_id                                      String                   @db.Uuid
+  botica_id                                     String                   @db.Uuid
   producto_presentacion_id                      String                   @db.Uuid
   lote_id                                       String                   @db.Uuid
   cantidad                                      Int
   precio_unitario_presentacion                  Decimal                  @db.Decimal(15, 2)
+  costo_unitario_base                           Decimal?                 @db.Decimal(15, 4)
   descuento                                     Decimal                  @default(0.00) @db.Decimal(15, 2)
   subtotal                                      Decimal                  @db.Decimal(15, 2)
   created_at                                    DateTime?                @default(now()) @db.Timestamptz(6)
@@ -166,38 +185,98 @@ model detalles_ventas {
   updated_by                                    String?                  @db.Uuid
   deleted_by                                    String?                  @db.Uuid
   version                                       Int                      @default(1)
-  usuarios_detalles_ventas_created_byTousuarios usuarios?                @relation("detalles_ventas_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
-  usuarios_detalles_ventas_deleted_byTousuarios usuarios?                @relation("detalles_ventas_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
+  boticas                                       boticas                  @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   lotes                                         lotes                    @relation(fields: [lote_id], references: [id], onUpdate: NoAction)
   productos_presentaciones                      productos_presentaciones @relation(fields: [producto_presentacion_id], references: [id], onUpdate: NoAction)
+  usuarios_detalles_ventas_created_byTousuarios usuarios?                @relation("detalles_ventas_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
+  usuarios_detalles_ventas_deleted_byTousuarios usuarios?                @relation("detalles_ventas_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   usuarios_detalles_ventas_updated_byTousuarios usuarios?                @relation("detalles_ventas_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   ventas                                        ventas                   @relation(fields: [venta_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([botica_id], map: "idx_detalles_ventas_botica_id")
   @@index([venta_id], map: "idx_detalles_ventas_venta_id", where: raw("(deleted_at IS NULL)"))
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model empresas {
-  id                                     String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  ruc                                    String       @unique(map: "idx_empresas_ruc_activo", where: raw("(deleted_at IS NULL)")) @db.VarChar(11)
-  razon_social                           String       @db.VarChar(150)
-  direccion                              String?
-  created_at                             DateTime?    @default(now()) @db.Timestamptz(6)
-  updated_at                             DateTime?    @default(now()) @db.Timestamptz(6)
-  deleted_at                             DateTime?    @db.Timestamptz(6)
-  created_by                             String?      @db.Uuid
-  updated_by                             String?      @db.Uuid
-  deleted_by                             String?      @db.Uuid
-  version                                Int          @default(1)
-  usuarios_empresas_created_byTousuarios usuarios?    @relation("empresas_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
-  usuarios_empresas_deleted_byTousuarios usuarios?    @relation("empresas_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
-  usuarios_empresas_updated_byTousuarios usuarios?    @relation("empresas_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
-  sucursales                             sucursales[]
+model boticas {
+  id                                    String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nombre                                String       @db.VarChar(100)
+  ruc                                   String       @unique(map: "idx_boticas_ruc_activo", where: raw("(deleted_at IS NULL)")) @db.VarChar(11)
+  razon_social                          String       @db.VarChar(150)
+  direccion                             String?
+  telefono                              String?      @db.VarChar(20)
+  email                                 String?      @db.VarChar(100)
+  estado                                String       @default("ACTIVO") @db.VarChar(20)
+  configuracion                         Json?
+  created_at                            DateTime?    @default(now()) @db.Timestamptz(6)
+  updated_at                            DateTime?    @default(now()) @db.Timestamptz(6)
+  deleted_at                            DateTime?    @db.Timestamptz(6)
+  created_by                            String?      @db.Uuid
+  updated_by                            String?      @db.Uuid
+  deleted_by                            String?      @db.Uuid
+  version                               Int          @default(1)
+  usuarios_boticas_created_byTousuarios usuarios?    @relation("boticas_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
+  usuarios_boticas_deleted_byTousuarios usuarios?    @relation("boticas_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
+  usuarios_boticas_updated_byTousuarios usuarios?    @relation("boticas_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
+  cajas                                 cajas[]
+  categorias                            categorias[]
+  clientes                              clientes[]
+  compras                               compras[]
+  detalles_compras                      detalles_compras[]
+  detalles_ventas                       detalles_ventas[]
+  formas_farmaceuticas                  formas_farmaceuticas[]
+  laboratorios                          laboratorios[]
+  lotes                                 lotes[]
+  medicamentos                          medicamentos[]
+  metodos_pago                          metodos_pago[]
+  movimientos_caja                      movimientos_caja[]
+  movimientos_inventario                movimientos_inventario[]
+  pagos                                 pagos[]
+  permisos                              permisos[]
+  principios_activos                    principios_activos[]
+  productos_comerciales                 productos_comerciales[]
+  productos_presentaciones              productos_presentaciones[]
+  proveedores                           proveedores[]
+  rol_permisos                          rol_permisos[]
+  roles                                 roles[]
+  series_documentos                     series_documentos[]
+  tipos_movimientos_inventario          tipos_movimientos_inventario[]
+  unidades_presentacion                 unidades_presentacion[]
+  usuarios                              usuarios[]
+  usuario_sucursales                    usuario_sucursales[]
+  historial_precios                     historial_precios[]
+  gastos_operativos                     gastos_operativos[]
+  migracion_log                         migracion_log[]
+  ventas                                ventas[]
+  sucursales                            sucursales[]
+
+  @@map("empresas")
+}
+
+/// Egresos que no corresponden a mercadería (alquiler, servicios, equipos, etc.).
+model gastos_operativos {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id   String    @db.Uuid
+  sucursal_id String?   @db.Uuid
+  tipo        String    @default("OPERATIVO") @db.VarChar(20)
+  categoria   String    @db.VarChar(100)
+  descripcion String?   @db.VarChar(255)
+  monto       Decimal   @db.Decimal(15, 2)
+  fecha       DateTime  @default(now()) @db.Timestamptz(6)
+  comprobante String?   @db.VarChar(100)
+  created_at  DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime? @default(now()) @db.Timestamptz(6)
+  deleted_at  DateTime? @db.Timestamptz(6)
+  boticas     boticas   @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
+
+  @@index([botica_id, fecha], map: "idx_gastos_operativos_botica_fecha")
+  @@index([sucursal_id], map: "idx_gastos_operativos_sucursal")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model formas_farmaceuticas {
   id                                                 String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                                          String         @db.Uuid
   nombre                                             String         @unique(map: "idx_formas_farmaceuticas_nombre_activo", where: raw("(deleted_at IS NULL)")) @db.VarChar(100)
   created_at                                         DateTime?      @default(now()) @db.Timestamptz(6)
   updated_at                                         DateTime?      @default(now()) @db.Timestamptz(6)
@@ -206,15 +285,19 @@ model formas_farmaceuticas {
   updated_by                                         String?        @db.Uuid
   deleted_by                                         String?        @db.Uuid
   version                                            Int            @default(1)
+  boticas                                            boticas        @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   usuarios_formas_farmaceuticas_created_byTousuarios usuarios?      @relation("formas_farmaceuticas_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_formas_farmaceuticas_deleted_byTousuarios usuarios?      @relation("formas_farmaceuticas_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   usuarios_formas_farmaceuticas_updated_byTousuarios usuarios?      @relation("formas_farmaceuticas_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   medicamentos                                       medicamentos[]
+
+  @@index([botica_id], map: "idx_formas_farmaceuticas_botica_id")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model laboratorios {
   id                                         String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                                  String                  @db.Uuid
   nombre                                     String                  @unique(map: "idx_laboratorios_nombre_activo", where: raw("(deleted_at IS NULL)")) @db.VarChar(100)
   pais                                       String?                 @db.VarChar(50)
   telefono                                   String?                 @db.VarChar(20)
@@ -226,10 +309,13 @@ model laboratorios {
   updated_by                                 String?                 @db.Uuid
   deleted_by                                 String?                 @db.Uuid
   version                                    Int                     @default(1)
+  boticas                                    boticas                 @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   usuarios_laboratorios_created_byTousuarios usuarios?               @relation("laboratorios_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_laboratorios_deleted_byTousuarios usuarios?               @relation("laboratorios_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   usuarios_laboratorios_updated_byTousuarios usuarios?               @relation("laboratorios_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   productos_comerciales                      productos_comerciales[]
+
+  @@index([botica_id], map: "idx_laboratorios_botica_id")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -239,6 +325,7 @@ model lotes {
   producto_comercial_id               String                   @db.Uuid
   detalle_compra_id                   String?                  @db.Uuid
   sucursal_id                         String                   @db.Uuid
+  botica_id                           String                   @db.Uuid
   numero_lote                         String                   @db.VarChar(50)
   fecha_fabricacion                   DateTime?                @db.Date
   fecha_vencimiento                   DateTime                 @db.Date
@@ -252,6 +339,7 @@ model lotes {
   updated_by                          String?                  @db.Uuid
   deleted_by                          String?                  @db.Uuid
   version                             Int                      @default(1)
+  boticas                             boticas                  @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   detalles_ventas                     detalles_ventas[]
   usuarios_lotes_created_byTousuarios usuarios?                @relation("lotes_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_lotes_deleted_byTousuarios usuarios?                @relation("lotes_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
@@ -262,6 +350,7 @@ model lotes {
   movimientos_inventario              movimientos_inventario[]
 
   @@unique([producto_comercial_id, numero_lote, sucursal_id], map: "idx_lotes_unicidad_activo", where: raw("(deleted_at IS NULL)"))
+  @@index([botica_id], map: "idx_lotes_botica_id")
   @@index([fecha_vencimiento, stock_actual], map: "idx_lotes_fefo", where: raw("((deleted_at IS NULL) AND (stock_actual > 0))"))
   @@index([producto_comercial_id], map: "idx_lotes_producto_comercial_id", where: raw("(deleted_at IS NULL)"))
   @@index([sucursal_id], map: "idx_lotes_sucursal_id", where: raw("(deleted_at IS NULL)"))
@@ -270,6 +359,7 @@ model lotes {
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model medicamentos {
   id                                         String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                                  String                  @db.Uuid
   principio_activo_id                        String                  @db.Uuid
   forma_farmaceutica_id                      String                  @db.Uuid
   concentracion                              Decimal                 @db.Decimal(10, 2)
@@ -284,17 +374,21 @@ model medicamentos {
   updated_by                                 String?                 @db.Uuid
   deleted_by                                 String?                 @db.Uuid
   version                                    Int                     @default(1)
+  boticas                                    boticas                 @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   usuarios_medicamentos_created_byTousuarios usuarios?               @relation("medicamentos_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_medicamentos_deleted_byTousuarios usuarios?               @relation("medicamentos_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   formas_farmaceuticas                       formas_farmaceuticas    @relation(fields: [forma_farmaceutica_id], references: [id], onUpdate: NoAction)
   principios_activos                         principios_activos      @relation(fields: [principio_activo_id], references: [id], onUpdate: NoAction)
   usuarios_medicamentos_updated_byTousuarios usuarios?               @relation("medicamentos_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   productos_comerciales                      productos_comerciales[]
+
+  @@index([botica_id], map: "idx_medicamentos_botica_id")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model metodos_pago {
   id                                         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                                  String    @db.Uuid
   nombre                                     String    @unique(map: "idx_metodos_pago_nombre_activo", where: raw("(deleted_at IS NULL)")) @db.VarChar(50)
   requiere_referencia                        Boolean   @default(false)
   created_at                                 DateTime? @default(now()) @db.Timestamptz(6)
@@ -304,10 +398,13 @@ model metodos_pago {
   updated_by                                 String?   @db.Uuid
   deleted_by                                 String?   @db.Uuid
   version                                    Int       @default(1)
+  boticas                                    boticas   @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   usuarios_metodos_pago_created_byTousuarios usuarios? @relation("metodos_pago_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_metodos_pago_deleted_byTousuarios usuarios? @relation("metodos_pago_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   usuarios_metodos_pago_updated_byTousuarios usuarios? @relation("metodos_pago_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   pagos                                      pagos[]
+
+  @@index([botica_id], map: "idx_metodos_pago_botica_id")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -315,6 +412,7 @@ model metodos_pago {
 model movimientos_caja {
   id                                             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   caja_id                                        String    @db.Uuid
+  botica_id                                      String    @db.Uuid
   usuario_id                                     String    @db.Uuid
   tipo                                           String    @db.VarChar(20)
   monto                                          Decimal   @db.Decimal(15, 2)
@@ -328,12 +426,14 @@ model movimientos_caja {
   updated_by                                     String?   @db.Uuid
   deleted_by                                     String?   @db.Uuid
   version                                        Int       @default(1)
+  boticas                                        boticas   @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   cajas                                          cajas     @relation(fields: [caja_id], references: [id], onUpdate: NoAction)
   usuarios_movimientos_caja_created_byTousuarios usuarios? @relation("movimientos_caja_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_movimientos_caja_deleted_byTousuarios usuarios? @relation("movimientos_caja_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   usuarios_movimientos_caja_updated_byTousuarios usuarios? @relation("movimientos_caja_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   usuarios                                       usuarios  @relation(fields: [usuario_id], references: [id], onUpdate: NoAction)
 
+  @@index([botica_id], map: "idx_movimientos_caja_botica_id")
   @@index([caja_id], map: "idx_movimientos_caja_caja_id", where: raw("(deleted_at IS NULL)"))
 }
 
@@ -342,6 +442,7 @@ model movimientos_caja {
 model movimientos_inventario {
   id                                                   String                       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   lote_id                                              String                       @db.Uuid
+  botica_id                                            String                       @db.Uuid
   tipo_movimiento_id                                   String                       @db.Uuid
   usuario_id                                           String                       @db.Uuid
   cantidad                                             Int
@@ -357,6 +458,7 @@ model movimientos_inventario {
   updated_by                                           String?                      @db.Uuid
   deleted_by                                           String?                      @db.Uuid
   version                                              Int                          @default(1)
+  boticas                                              boticas                      @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   usuarios_movimientos_inventario_created_byTousuarios usuarios?                    @relation("movimientos_inventario_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_movimientos_inventario_deleted_byTousuarios usuarios?                    @relation("movimientos_inventario_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   lotes                                                lotes                        @relation(fields: [lote_id], references: [id], onUpdate: NoAction)
@@ -364,6 +466,7 @@ model movimientos_inventario {
   usuarios_movimientos_inventario_updated_byTousuarios usuarios?                    @relation("movimientos_inventario_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   usuarios                                             usuarios                     @relation(fields: [usuario_id], references: [id], onUpdate: NoAction)
 
+  @@index([botica_id], map: "idx_movimientos_inventario_botica_id")
   @@index([lote_id], map: "idx_movimientos_inventario_lote_id", where: raw("(deleted_at IS NULL)"))
 }
 
@@ -372,6 +475,7 @@ model movimientos_inventario {
 model pagos {
   id                                  String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   venta_id                            String       @db.Uuid
+  botica_id                           String       @db.Uuid
   metodo_pago_id                      String       @db.Uuid
   monto                               Decimal      @db.Decimal(15, 2)
   referencia                          String?      @db.VarChar(100)
@@ -382,18 +486,21 @@ model pagos {
   updated_by                          String?      @db.Uuid
   deleted_by                          String?      @db.Uuid
   version                             Int          @default(1)
+  boticas                             boticas      @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   usuarios_pagos_created_byTousuarios usuarios?    @relation("pagos_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_pagos_deleted_byTousuarios usuarios?    @relation("pagos_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   metodos_pago                        metodos_pago @relation(fields: [metodo_pago_id], references: [id], onUpdate: NoAction)
   usuarios_pagos_updated_byTousuarios usuarios?    @relation("pagos_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   ventas                              ventas       @relation(fields: [venta_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
+  @@index([botica_id], map: "idx_pagos_botica_id")
   @@index([venta_id], map: "idx_pagos_venta_id", where: raw("(deleted_at IS NULL)"))
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model permisos {
   id                                     String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                              String         @db.Uuid
   codigo                                 String         @unique(map: "idx_permisos_codigo_activo", where: raw("(deleted_at IS NULL)")) @db.VarChar(50)
   descripcion                            String
   created_at                             DateTime?      @default(now()) @db.Timestamptz(6)
@@ -403,15 +510,19 @@ model permisos {
   updated_by                             String?        @db.Uuid
   deleted_by                             String?        @db.Uuid
   version                                Int            @default(1)
+  boticas                                boticas        @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   usuarios_permisos_created_byTousuarios usuarios?      @relation("permisos_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_permisos_deleted_byTousuarios usuarios?      @relation("permisos_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   usuarios_permisos_updated_byTousuarios usuarios?      @relation("permisos_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   rol_permisos                           rol_permisos[]
+
+  @@index([botica_id], map: "idx_permisos_botica_id")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model principios_activos {
   id                                               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                                        String         @db.Uuid
   nombre                                           String         @unique(map: "idx_principios_activos_nombre_activo", where: raw("(deleted_at IS NULL)")) @db.VarChar(150)
   descripcion                                      String?
   created_at                                       DateTime?      @default(now()) @db.Timestamptz(6)
@@ -421,11 +532,13 @@ model principios_activos {
   updated_by                                       String?        @db.Uuid
   deleted_by                                       String?        @db.Uuid
   version                                          Int            @default(1)
+  boticas                                          boticas        @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   medicamentos                                     medicamentos[]
   usuarios_principios_activos_created_byTousuarios usuarios?      @relation("principios_activos_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_principios_activos_deleted_byTousuarios usuarios?      @relation("principios_activos_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   usuarios_principios_activos_updated_byTousuarios usuarios?      @relation("principios_activos_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
 
+  @@index([botica_id], map: "idx_principios_activos_botica_id")
   @@index([nombre], map: "idx_principios_activos_nombre", where: raw("(deleted_at IS NULL)"))
 }
 
@@ -434,6 +547,7 @@ model principios_activos {
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model productos_comerciales {
   id                                                  String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                                           String                     @db.Uuid
   medicamento_id                                      String                     @db.Uuid
   laboratorio_id                                      String                     @db.Uuid
   categoria_id                                        String                     @db.Uuid
@@ -450,6 +564,7 @@ model productos_comerciales {
   updated_by                                          String?                    @db.Uuid
   deleted_by                                          String?                    @db.Uuid
   version                                             Int                        @default(1)
+  boticas                                             boticas                    @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   lotes                                               lotes[]
   categorias                                          categorias                 @relation(fields: [categoria_id], references: [id], onUpdate: NoAction)
   usuarios_productos_comerciales_created_byTousuarios usuarios?                  @relation("productos_comerciales_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
@@ -462,12 +577,14 @@ model productos_comerciales {
 
   @@index([codigo_interno], map: "idx_productos_codigo_interno_busqueda", where: raw("(deleted_at IS NULL)"))
   @@index([sku], map: "idx_productos_sku_busqueda", where: raw("(deleted_at IS NULL)"))
+  @@index([botica_id], map: "idx_productos_comerciales_botica_id")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model productos_presentaciones {
   id                                                     String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                                              String                @db.Uuid
   producto_comercial_id                                  String                @db.Uuid
   unidad_presentacion_id                                 String                @db.Uuid
   cantidad_unidad_base                                   Int
@@ -481,6 +598,7 @@ model productos_presentaciones {
   updated_by                                             String?               @db.Uuid
   deleted_by                                             String?               @db.Uuid
   version                                                Int                   @default(1)
+  boticas                                                boticas               @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   detalles_compras                                       detalles_compras[]
   detalles_ventas                                        detalles_ventas[]
   historial_precios                                      historial_precios[]
@@ -491,11 +609,13 @@ model productos_presentaciones {
   usuarios_productos_presentaciones_updated_byTousuarios usuarios?             @relation("productos_presentaciones_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
 
   @@index([codigo_barras], map: "idx_presentaciones_codigo_barras_busqueda", where: raw("((deleted_at IS NULL) AND (codigo_barras IS NOT NULL))"))
+  @@index([botica_id], map: "idx_productos_presentaciones_botica_id")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model proveedores {
   id                                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                                 String    @db.Uuid
   ruc                                       String    @unique(map: "idx_proveedores_ruc_activo", where: raw("(deleted_at IS NULL)")) @db.VarChar(11)
   razon_social                              String    @db.VarChar(150)
   direccion                                 String?
@@ -508,25 +628,32 @@ model proveedores {
   updated_by                                String?   @db.Uuid
   deleted_by                                String?   @db.Uuid
   version                                   Int       @default(1)
+  boticas                                   boticas   @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   compras                                   compras[]
   usuarios_proveedores_created_byTousuarios usuarios? @relation("proveedores_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_proveedores_deleted_byTousuarios usuarios? @relation("proveedores_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   usuarios_proveedores_updated_byTousuarios usuarios? @relation("proveedores_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
+
+  @@index([botica_id], map: "idx_proveedores_botica_id")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model rol_permisos {
   rol_id     String   @db.Uuid
   permiso_id String   @db.Uuid
+  botica_id  String   @db.Uuid
   permisos   permisos @relation(fields: [permiso_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   roles      roles    @relation(fields: [rol_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  boticas    boticas  @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
 
   @@id([rol_id, permiso_id])
+  @@index([botica_id], map: "idx_rol_permisos_botica_id")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model roles {
   id                                  String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                           String         @db.Uuid
   nombre                              String         @unique(map: "idx_roles_nombre_activo", where: raw("(deleted_at IS NULL)")) @db.VarChar(50)
   created_at                          DateTime?      @default(now()) @db.Timestamptz(6)
   updated_at                          DateTime?      @default(now()) @db.Timestamptz(6)
@@ -535,17 +662,20 @@ model roles {
   updated_by                          String?        @db.Uuid
   deleted_by                          String?        @db.Uuid
   version                             Int            @default(1)
+  boticas                             boticas        @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   rol_permisos                        rol_permisos[]
   usuarios_roles_created_byTousuarios usuarios?      @relation("roles_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_roles_deleted_byTousuarios usuarios?      @relation("roles_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   usuarios_roles_updated_byTousuarios usuarios?      @relation("roles_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   usuarios                            usuarios[]
+
+  @@index([botica_id], map: "idx_roles_botica_id")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model sucursales {
   id                                       String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  empresa_id                               String               @db.Uuid
+  botica_id                              String               @db.Uuid @map("empresa_id")
   nombre                                   String               @db.VarChar(100)
   direccion                                String
   telefono                                 String?              @db.VarChar(20)
@@ -561,14 +691,17 @@ model sucursales {
   lotes                                    lotes[]
   usuarios_sucursales_created_byTousuarios usuarios?            @relation("sucursales_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_sucursales_deleted_byTousuarios usuarios?            @relation("sucursales_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
-  empresas                                 empresas             @relation(fields: [empresa_id], references: [id], onUpdate: NoAction)
+  boticas                                  boticas              @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   usuarios_sucursales_updated_byTousuarios usuarios?            @relation("sucursales_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   usuario_sucursales                       usuario_sucursales[]
+
+  @@index([botica_id], map: "idx_sucursales_botica_id")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model tipos_movimientos_inventario {
   id                                                         String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                                                  String                   @db.Uuid
   codigo                                                     String                   @unique(map: "idx_tipos_mov_codigo_activo", where: raw("(deleted_at IS NULL)")) @db.VarChar(20)
   descripcion                                                String
   afecta_stock                                               Int
@@ -578,15 +711,19 @@ model tipos_movimientos_inventario {
   updated_by                                                 String?                  @db.Uuid
   deleted_by                                                 String?                  @db.Uuid
   version                                                    Int                      @default(1)
+  boticas                                                    boticas                  @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   movimientos_inventario                                     movimientos_inventario[]
   usuarios_tipos_movimientos_inventario_created_byTousuarios usuarios?                @relation("tipos_movimientos_inventario_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction, map: "tipos_movimientos_created_by_fkey")
   usuarios_tipos_movimientos_inventario_deleted_byTousuarios usuarios?                @relation("tipos_movimientos_inventario_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction, map: "tipos_movimientos_deleted_by_fkey")
   usuarios_tipos_movimientos_inventario_updated_byTousuarios usuarios?                @relation("tipos_movimientos_inventario_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction, map: "tipos_movimientos_updated_by_fkey")
+
+  @@index([botica_id], map: "idx_tipos_mov_botica_id")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model unidades_presentacion {
   id                                                  String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                                           String                     @db.Uuid
   nombre                                              String                     @unique(map: "idx_unidades_presentacion_nombre_activo", where: raw("(deleted_at IS NULL)")) @db.VarChar(50)
   abreviatura                                         String                     @unique(map: "idx_unidades_presentacion_abrev_activo", where: raw("(deleted_at IS NULL)")) @db.VarChar(10)
   created_at                                          DateTime?                  @default(now()) @db.Timestamptz(6)
@@ -596,17 +733,21 @@ model unidades_presentacion {
   updated_by                                          String?                    @db.Uuid
   deleted_by                                          String?                    @db.Uuid
   version                                             Int                        @default(1)
+  boticas                                             boticas                    @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   productos_comerciales                               productos_comerciales[]
   productos_presentaciones                            productos_presentaciones[]
   usuarios_unidades_presentacion_created_byTousuarios usuarios?                  @relation("unidades_presentacion_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_unidades_presentacion_deleted_byTousuarios usuarios?                  @relation("unidades_presentacion_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
   usuarios_unidades_presentacion_updated_byTousuarios usuarios?                  @relation("unidades_presentacion_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
+
+  @@index([botica_id], map: "idx_unidades_presentacion_botica_id")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model usuarios {
   id                                                                             String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                                                                      String                         @db.Uuid
   rol_id                                                                         String                         @db.Uuid
   nombre                                                                         String                         @db.VarChar(100)
   correo                                                                         String                         @unique(map: "idx_usuarios_correo_activo", where: raw("(deleted_at IS NULL)")) @db.VarChar(100)
@@ -619,6 +760,7 @@ model usuarios {
   updated_by                                                                     String?                        @db.Uuid
   deleted_by                                                                     String?                        @db.Uuid
   version                                                                        Int                            @default(1)
+  boticas                                                                        boticas                        @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   cajas_cajas_created_byTousuarios                                               cajas[]                        @relation("cajas_created_byTousuarios")
   cajas_cajas_deleted_byTousuarios                                               cajas[]                        @relation("cajas_deleted_byTousuarios")
   cajas_cajas_updated_byTousuarios                                               cajas[]                        @relation("cajas_updated_byTousuarios")
@@ -636,11 +778,11 @@ model usuarios {
   detalles_compras_detalles_compras_deleted_byTousuarios                         detalles_compras[]             @relation("detalles_compras_deleted_byTousuarios")
   detalles_compras_detalles_compras_updated_byTousuarios                         detalles_compras[]             @relation("detalles_compras_updated_byTousuarios")
   detalles_ventas_detalles_ventas_created_byTousuarios                           detalles_ventas[]              @relation("detalles_ventas_created_byTousuarios")
-  detalles_ventas_detalles_ventas_deleted_byTousuarios                           detalles_ventas[]              @relation("detalles_ventas_deleted_byTousuarios")
-  detalles_ventas_detalles_ventas_updated_byTousuarios                           detalles_ventas[]              @relation("detalles_ventas_updated_byTousuarios")
-  empresas_empresas_created_byTousuarios                                         empresas[]                     @relation("empresas_created_byTousuarios")
-  empresas_empresas_deleted_byTousuarios                                         empresas[]                     @relation("empresas_deleted_byTousuarios")
-  empresas_empresas_updated_byTousuarios                                         empresas[]                     @relation("empresas_updated_byTousuarios")
+  detalles_ventas_detalles_ventas_deleted_byTousuarios                           detalles_ventas[]             @relation("detalles_ventas_deleted_byTousuarios")
+  detalles_ventas_detalles_ventas_updated_byTousuarios                           detalles_ventas[]             @relation("detalles_ventas_updated_byTousuarios")
+  boticas_boticas_created_byTousuarios                                         boticas[]                      @relation("boticas_created_byTousuarios")
+  boticas_boticas_deleted_byTousuarios                                         boticas[]                      @relation("boticas_deleted_byTousuarios")
+  boticas_boticas_updated_byTousuarios                                         boticas[]                      @relation("boticas_updated_byTousuarios")
   formas_farmaceuticas_formas_farmaceuticas_created_byTousuarios                 formas_farmaceuticas[]         @relation("formas_farmaceuticas_created_byTousuarios")
   formas_farmaceuticas_formas_farmaceuticas_deleted_byTousuarios                 formas_farmaceuticas[]         @relation("formas_farmaceuticas_deleted_byTousuarios")
   formas_farmaceuticas_formas_farmaceuticas_updated_byTousuarios                 formas_farmaceuticas[]         @relation("formas_farmaceuticas_updated_byTousuarios")
@@ -710,12 +852,97 @@ model usuarios {
   ventas_ventas_deleted_byTousuarios                                             ventas[]                       @relation("ventas_deleted_byTousuarios")
   ventas_ventas_updated_byTousuarios                                             ventas[]                       @relation("ventas_updated_byTousuarios")
   ventas                                                                         ventas[]
+
+  @@index([botica_id], map: "idx_usuarios_botica_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model migracion_log {
+  id                  Int       @id @default(autoincrement())
+  botica_id           String    @db.Uuid
+  tabla               String?   @db.VarChar(100)
+  operacion           String?   @db.VarChar(50)
+  registros_afectados Int?
+  fecha               DateTime? @default(now()) @db.Timestamptz(6)
+  observacion         String?
+  boticas             boticas   @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
+
+  @@index([botica_id], map: "idx_migracion_log_botica_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model usuario_sucursales {
+  usuario_id                                       String     @unique(map: "idx_usuario_sucursales_principal_unico", where: raw("((es_principal = true) AND (activo = true))")) @db.Uuid
+  botica_id                                        String     @db.Uuid
+  sucursal_id                                      String     @db.Uuid
+  es_principal                                     Boolean?   @default(false)
+  activo                                           Boolean?   @default(true)
+  created_at                                       DateTime?  @default(now()) @db.Timestamptz(6)
+  updated_at                                       DateTime?  @default(now()) @db.Timestamptz(6)
+  created_by                                       String?    @db.Uuid
+  updated_by                                       String?    @db.Uuid
+  deleted_by                                       String?    @db.Uuid
+  version                                          Int        @default(1)
+  boticas                                          boticas    @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
+  sucursales                                       sucursales @relation(fields: [sucursal_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_sucursal")
+  usuarios_usuario_sucursales_usuario_idTousuarios usuarios   @relation("usuario_sucursales_usuario_idTousuarios", fields: [usuario_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_usuario")
+  usuarios_usuario_sucursales_created_byTousuarios usuarios?  @relation("usuario_sucursales_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction, map: "fk_created_by")
+  usuarios_usuario_sucursales_deleted_byTousuarios usuarios?  @relation("usuario_sucursales_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
+  usuarios_usuario_sucursales_updated_byTousuarios usuarios?  @relation("usuario_sucursales_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction, map: "fk_updated_by")
+
+  @@id([usuario_id, sucursal_id])
+  @@index([botica_id], map: "idx_usuario_sucursales_botica_id")
+  @@index([sucursal_id, activo], map: "idx_usuario_sucursales_sucursal", where: raw("(activo = true)"))
+  @@index([usuario_id, activo], map: "idx_usuario_sucursales_usuario", where: raw("(activo = true)"))
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model historial_precios {
+  id                       String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                String                   @db.Uuid
+  producto_presentacion_id String                   @db.Uuid
+  precio_anterior          Decimal                  @db.Decimal(15, 2)
+  precio_nuevo             Decimal                  @db.Decimal(15, 2)
+  motivo                   String?                  @db.VarChar(255)
+  fecha_cambio             DateTime                 @default(now()) @db.Timestamptz(6)
+  created_at               DateTime?                @default(now()) @db.Timestamptz(6)
+  created_by               String?                  @db.Uuid
+  boticas                  boticas                  @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
+  usuarios                 usuarios?                @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  productos_presentaciones productos_presentaciones @relation(fields: [producto_presentacion_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([botica_id], map: "idx_historial_precios_botica_id")
+  @@index([producto_presentacion_id], map: "idx_historial_precios_producto")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model series_documentos {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id            String    @db.Uuid
+  tipo_documento       String    @db.VarChar(20)
+  serie                String    @db.VarChar(10)
+  correlativo_inicial  Int       @default(1)
+  correlativo_actual   Int       @default(1)
+  longitud_correlativo Int       @default(8)
+  sucursal_id          String?   @db.Uuid
+  activo               Boolean   @default(true)
+  created_at           DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime? @default(now()) @db.Timestamptz(6)
+  created_by           String?   @db.Uuid
+  updated_by           String?   @db.Uuid
+  version              Int       @default(1)
+  boticas              boticas   @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
+
+  @@unique([serie, tipo_documento, sucursal_id], map: "series_documentos_serie_unica")
+  @@index([botica_id], map: "idx_series_documentos_botica_id")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model ventas {
   id                                   String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                            String            @db.Uuid
   cliente_id                           String?           @db.Uuid
   usuario_id                           String            @db.Uuid
   caja_id                              String            @db.Uuid
@@ -732,6 +959,7 @@ model ventas {
   updated_by                           String?           @db.Uuid
   deleted_by                           String?           @db.Uuid
   version                              Int               @default(1)
+  boticas                              boticas           @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   detalles_ventas                      detalles_ventas[]
   pagos                                pagos[]
   cajas                                cajas             @relation(fields: [caja_id], references: [id], onUpdate: NoAction)
@@ -741,77 +969,9 @@ model ventas {
   usuarios_ventas_updated_byTousuarios usuarios?         @relation("ventas_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   usuarios                             usuarios          @relation(fields: [usuario_id], references: [id], onUpdate: NoAction)
 
+  @@index([botica_id], map: "idx_ventas_botica_id")
   @@index([caja_id], map: "idx_ventas_caja_id", where: raw("(deleted_at IS NULL)"))
   @@index([cliente_id], map: "idx_ventas_cliente_id", where: raw("(deleted_at IS NULL)"))
   @@index([fecha], map: "idx_ventas_fecha", where: raw("(deleted_at IS NULL)"))
   @@index([usuario_id], map: "idx_ventas_usuario_id", where: raw("(deleted_at IS NULL)"))
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model migracion_log {
-  id                  Int       @id @default(autoincrement())
-  tabla               String?   @db.VarChar(100)
-  operacion           String?   @db.VarChar(50)
-  registros_afectados Int?
-  fecha               DateTime? @default(now()) @db.Timestamptz(6)
-  observacion         String?
-}
-
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model usuario_sucursales {
-  usuario_id                                       String     @unique(map: "idx_usuario_sucursales_principal_unico", where: raw("((es_principal = true) AND (activo = true))")) @db.Uuid
-  sucursal_id                                      String     @db.Uuid
-  es_principal                                     Boolean?   @default(false)
-  activo                                           Boolean?   @default(true)
-  created_at                                       DateTime?  @default(now()) @db.Timestamptz(6)
-  updated_at                                       DateTime?  @default(now()) @db.Timestamptz(6)
-  created_by                                       String?    @db.Uuid
-  updated_by                                       String?    @db.Uuid
-  deleted_by                                       String?    @db.Uuid
-  version                                          Int        @default(1)
-  sucursales                                       sucursales @relation(fields: [sucursal_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_sucursal")
-  usuarios_usuario_sucursales_usuario_idTousuarios usuarios   @relation("usuario_sucursales_usuario_idTousuarios", fields: [usuario_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_usuario")
-  usuarios_usuario_sucursales_created_byTousuarios usuarios?  @relation("usuario_sucursales_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction, map: "fk_created_by")
-  usuarios_usuario_sucursales_deleted_byTousuarios usuarios?  @relation("usuario_sucursales_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
-  usuarios_usuario_sucursales_updated_byTousuarios usuarios?  @relation("usuario_sucursales_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction, map: "fk_updated_by")
-
-  @@id([usuario_id, sucursal_id])
-  @@index([sucursal_id, activo], map: "idx_usuario_sucursales_sucursal", where: raw("(activo = true)"))
-  @@index([usuario_id, activo], map: "idx_usuario_sucursales_usuario", where: raw("(activo = true)"))
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-model historial_precios {
-  id                       String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  producto_presentacion_id String                   @db.Uuid
-  precio_anterior          Decimal                  @db.Decimal(15, 2)
-  precio_nuevo             Decimal                  @db.Decimal(15, 2)
-  motivo                   String?                  @db.VarChar(255)
-  fecha_cambio             DateTime                 @default(now()) @db.Timestamptz(6)
-  created_at               DateTime?                @default(now()) @db.Timestamptz(6)
-  created_by               String?                  @db.Uuid
-  usuarios                 usuarios?                @relation(fields: [created_by], references: [id], onUpdate: NoAction)
-  productos_presentaciones productos_presentaciones @relation(fields: [producto_presentacion_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-
-  @@index([producto_presentacion_id], map: "idx_historial_precios_producto")
-}
-
-/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
-/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
-model series_documentos {
-  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tipo_documento       String    @db.VarChar(20)
-  serie                String    @db.VarChar(10)
-  correlativo_inicial  Int       @default(1)
-  correlativo_actual   Int       @default(1)
-  longitud_correlativo Int       @default(8)
-  sucursal_id          String?   @db.Uuid
-  activo               Boolean   @default(true)
-  created_at           DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at           DateTime? @default(now()) @db.Timestamptz(6)
-  created_by           String?   @db.Uuid
-  updated_by           String?   @db.Uuid
-  version              Int       @default(1)
-
-  @@unique([serie, tipo_documento, sucursal_id], map: "series_documentos_serie_unica")
 }

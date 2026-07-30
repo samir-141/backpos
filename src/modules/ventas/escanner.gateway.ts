@@ -16,7 +16,9 @@ import { Logger } from '@nestjs/common';
   },
   namespace: 'escanner',
 })
-export class EscannerGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class EscannerGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer()
   server: Server;
 
@@ -36,22 +38,30 @@ export class EscannerGateway implements OnGatewayConnection, OnGatewayDisconnect
         socketId: client.id,
         timestamp: Date.now(),
       });
-      this.logger.log(`📱 Cliente desconectado de sesión [${sessionCode}]: ${client.id}`);
+      this.logger.log(
+        `📱 Cliente desconectado de sesión [${sessionCode}]: ${client.id}`,
+      );
     }
   }
 
   @SubscribeMessage('join_session')
   handleJoinSession(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { sessionCode: string; role?: 'pc' | 'phone'; deviceName?: string }
+    @MessageBody()
+    data: { sessionCode: string; role?: 'pc' | 'phone'; deviceName?: string },
   ) {
-    const sessionCode = String(data.sessionCode || '').toUpperCase().trim();
-    if (!sessionCode) return { success: false, error: 'Código de sesión inválido' };
+    const sessionCode = String(data.sessionCode || '')
+      .toUpperCase()
+      .trim();
+    if (!sessionCode)
+      return { success: false, error: 'Código de sesión inválido' };
 
     client.join(sessionCode);
     this.socketSessionMap.set(client.id, sessionCode);
 
-    this.logger.log(`🔗 [${data.role || 'device'}] unido a sala: ${sessionCode} (${data.deviceName || client.id})`);
+    this.logger.log(
+      `🔗 [${data.role || 'device'}] unido a sala: ${sessionCode} (${data.deviceName || client.id})`,
+    );
 
     // Notificar a otros dispositivos en la sala que se unió alguien
     client.to(sessionCode).emit('device_joined', {
@@ -67,14 +77,19 @@ export class EscannerGateway implements OnGatewayConnection, OnGatewayDisconnect
   @SubscribeMessage('scan_barcode')
   handleScanBarcode(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { sessionCode: string; barcode: string; deviceName?: string }
+    @MessageBody()
+    data: { sessionCode: string; barcode: string; deviceName?: string },
   ) {
-    const sessionCode = String(data.sessionCode || '').toUpperCase().trim();
+    const sessionCode = String(data.sessionCode || '')
+      .toUpperCase()
+      .trim();
     const barcode = String(data.barcode || '').trim();
 
     if (!sessionCode || !barcode) return;
 
-    this.logger.log(`⚡ Código [${barcode}] transmitido en sesión [${sessionCode}] por ${data.deviceName || client.id}`);
+    this.logger.log(
+      `⚡ Código [${barcode}] transmitido en sesión [${sessionCode}] por ${data.deviceName || client.id}`,
+    );
 
     // Retransmitir inmediatamente a todos en la sesión (incluido PC POS)
     this.server.to(sessionCode).emit('barcode_scanned', {
@@ -88,6 +103,10 @@ export class EscannerGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   @SubscribeMessage('ping_check')
   handlePing(@MessageBody() data: { timestamp: number }) {
-    return { pong: true, clientTimestamp: data?.timestamp || Date.now(), serverTimestamp: Date.now() };
+    return {
+      pong: true,
+      clientTimestamp: data?.timestamp || Date.now(),
+      serverTimestamp: Date.now(),
+    };
   }
 }

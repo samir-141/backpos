@@ -5,9 +5,9 @@ import { CatalogosService } from './catalogos.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 
 @Module({
-    imports: [PrismaModule],
-    controllers: [CatalogosController],
-    providers: [CatalogosService],
-    exports: [CatalogosService],
+  imports: [PrismaModule],
+  controllers: [CatalogosController],
+  providers: [CatalogosService],
+  exports: [CatalogosService],
 })
-export class CatalogosModule { }
+export class CatalogosModule {}

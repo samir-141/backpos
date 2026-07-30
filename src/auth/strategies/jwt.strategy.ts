@@ -7,34 +7,37 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-    constructor(
-        private configService: ConfigService,
-        private prisma: PrismaService,
-    ) {
-        super({
-            jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
-            ignoreExpiration: false,
-            // 1. Añadimos <string> y el signo ! al final
-            secretOrKey: configService.get<string>('JWT_SECRET')!,
-        });
+  constructor(
+    private configService: ConfigService,
+    private prisma: PrismaService,
+  ) {
+    super({
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ignoreExpiration: false,
+      // 1. Añadimos <string> y el signo ! al final
+      secretOrKey:
+        configService.get<string>('JWT_SECRET') ||
+        'pos_farmacia_default_secret_key_2026',
+    });
+  }
+
+  async validate(payload: any) {
+    const usuario = await this.prisma.usuarios.findUnique({
+      where: { id: payload.sub },
+      include: { roles: true },
+    });
+
+    if (!usuario || usuario.estado !== 'ACTIVO') {
+      throw new UnauthorizedException('Usuario no autorizado');
     }
 
-    async validate(payload: any) {
-        const usuario = await this.prisma.usuarios.findUnique({
-            where: { id: payload.sub },
-            include: { roles: true },
-        });
-
-        if (!usuario || usuario.estado !== 'ACTIVO') {
-            throw new UnauthorizedException('Usuario no autorizado');
-        }
-
-        return {
-            id: usuario.id,
-            correo: usuario.correo,
-            nombre: usuario.nombre,
-            rol: usuario.roles.nombre,
-            sucursal_id: payload.sucursal_id,
-        };
-    }
+    return {
+      id: usuario.id,
+      correo: usuario.correo,
+      nombre: usuario.nombre,
+      rol: usuario.roles?.nombre || 'SIN_ROL',
+      botica_id: usuario.botica_id,
+      sucursal_id: payload.sucursal_id,
+    };
+  }
 }

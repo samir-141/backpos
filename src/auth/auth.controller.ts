@@ -5,15 +5,15 @@ import { LoginDto } from './dto/login.dto';
 
 @Controller('auth')
 export class AuthController {
-    constructor(private authService: AuthService) { }
+  constructor(private authService: AuthService) {}
 
-    @Post('login')
-    @HttpCode(HttpStatus.OK)
-    async login(@Body() loginDto: LoginDto) {
-        const usuario = await this.authService.validateUser(
-            loginDto.correo,
-            loginDto.password,
-        );
-        return this.authService.login(usuario);
-    }
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  async login(@Body() loginDto: LoginDto) {
+    const usuario = await this.authService.validateUser(
+      loginDto.correo,
+      loginDto.password,
+    );
+    return this.authService.login(usuario);
+  }
 }

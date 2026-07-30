@@ -1,10 +1,10 @@
-// src/socket/events.module.ts
-import { Module, Global } from "@nestjs/common";
-import { EventsGateway } from "./events.gateway";
+import { Module, Global } from '@nestjs/common';
+import { EventsGateway } from './events.gateway';
+import { RealtimeService } from './realtime.service';
 
 @Global()
 @Module({
-  providers: [EventsGateway],
-  exports: [EventsGateway],
+  providers: [EventsGateway, RealtimeService],
+  exports: [EventsGateway, RealtimeService],
 })
 export class EventsModule {}

@@ -1,6 +1,20 @@
-import { IsString, IsNotEmpty, IsNumber, IsOptional, ValidateNested, IsArray, IsEnum, IsDateString, Min } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  ValidateNested,
+  IsArray,
+  IsEnum,
+  IsDateString,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
-import { TipoDocumentoSunat, TipoDocumentoIdentidad, AfectacionIgv } from '../sunat/catalogos.enum';
+import {
+  TipoDocumentoSunat,
+  TipoDocumentoIdentidad,
+  AfectacionIgv,
+} from '../sunat/catalogos.enum';
 
 export class ClienteDto {
   @IsEnum(TipoDocumentoIdentidad)

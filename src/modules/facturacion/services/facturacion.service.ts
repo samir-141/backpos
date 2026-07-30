@@ -19,7 +19,7 @@ export class FacturacionService {
   async procesarVenta(payload: CreateInvoiceDto) {
     // 1. Validar DTO y preparar datos
     this.validator.validar(payload);
-    
+
     // 2. Construir XML UBL 2.1
     const xml = this.xmlBuilder.buildInvoice(payload);
     // 3. Firmar XML
@@ -28,11 +28,11 @@ export class FacturacionService {
     // 6. Procesar CDR
     // 7. Guardar en BD
     // 8. Generar PDF / Ticket
-    
+
     return {
       success: true,
       message: 'Proceso de facturación iniciado',
-      data: payload
+      data: payload,
     };
   }
 }
