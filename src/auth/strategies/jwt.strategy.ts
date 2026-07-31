@@ -11,13 +11,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private configService: ConfigService,
     private prisma: PrismaService,
   ) {
+    const secret = configService.get<string>('JWT_SECRET');
+    if (!secret) {
+      throw new Error('JWT_SECRET no está definido. Configúralo en el entorno (ver .env.example).');
+    }
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      // 1. Añadimos <string> y el signo ! al final
-      secretOrKey:
-        configService.get<string>('JWT_SECRET') ||
-        'pos_farmacia_default_secret_key_2026',
+      secretOrKey: secret,
     });
   }
 

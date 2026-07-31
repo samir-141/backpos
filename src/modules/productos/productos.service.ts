@@ -195,7 +195,27 @@ export class ProductosService {
    * Crea un nuevo producto comercial en la base de datos de manera transaccional,
    * o agrega una nueva presentación a un producto comercial existente.
    */
-  async create(boticaId: string, dto: CreateProductoDto) {
+  async create(boticaId: string, dto: CreateProductoDto, usuarioId?: string) {
+    if (!boticaId || !usuarioId) {
+      throw new BadRequestException('No se pudo identificar la botica o el usuario que crea el producto.');
+    }
+
+    // El producto comercial pertenece a la botica; la sucursal se registra al
+    // ingresar lotes/stock. Normalizamos antes de validar y persistir.
+    dto = {
+      ...dto,
+      nombre_comercial: dto.nombre_comercial?.trim(),
+      sku: dto.sku?.trim().toUpperCase(),
+      codigo_interno: dto.codigo_interno?.trim() || undefined,
+      codigo_barras: dto.codigo_barras?.trim() || undefined,
+      registro_sanitario: dto.registro_sanitario?.trim() || undefined,
+      presentaciones: dto.presentaciones?.map((pres) => ({
+        ...pres,
+        cantidad_unidad_base: Number(pres.cantidad_unidad_base),
+        precio_actual: Number(pres.precio_actual),
+        codigo_barras: pres.codigo_barras?.trim() || undefined,
+      })),
+    };
     const unidadBaseId = dto.unidad_base_id || dto.presentacion_id;
     const presentaciones = dto.presentaciones?.length
       ? dto.presentaciones
@@ -220,6 +240,19 @@ export class ProductosService {
     if (new Set(presentaciones.map((p) => p.unidad_presentacion_id)).size !== presentaciones.length) {
       throw new BadRequestException('No se puede repetir una presentación para el mismo producto.');
     }
+
+    const validarReferencias = async (tx: any) => {
+      const [principio, forma, laboratorio, categoria, ...unidades] = await Promise.all([
+        dto.principio_activo_id ? tx.principios_activos.findFirst({ where: { id: dto.principio_activo_id, botica_id: boticaId, deleted_at: null }, select: { id: true } }) : null,
+        dto.forma_farmaceutica_id ? tx.formas_farmaceuticas.findFirst({ where: { id: dto.forma_farmaceutica_id, botica_id: boticaId, deleted_at: null }, select: { id: true } }) : null,
+        dto.laboratorio_id ? tx.laboratorios.findFirst({ where: { id: dto.laboratorio_id, botica_id: boticaId, deleted_at: null }, select: { id: true } }) : null,
+        dto.categoria_id ? tx.categorias.findFirst({ where: { id: dto.categoria_id, botica_id: boticaId, deleted_at: null }, select: { id: true } }) : null,
+        ...[...new Set(presentaciones.map((p) => p.unidad_presentacion_id))].map((id) => tx.unidades_presentacion.findFirst({ where: { id, botica_id: boticaId, deleted_at: null }, select: { id: true } })),
+      ]);
+      if (!principio || !forma || !laboratorio || !categoria || unidades.some((unidad) => !unidad)) {
+        throw new BadRequestException('Uno o más catálogos seleccionados no existen, están inactivos o pertenecen a otra botica.');
+      }
+    };
     // --- CASO 1: AGREGAR PRESENTACION A PRODUCTO EXISTENTE ---
     if (dto.producto_comercial_id) {
       this.logger.log(
@@ -274,20 +307,21 @@ export class ProductosService {
           codigo_barras: dto.codigo_barras || null,
           precio_actual: dto.precio_actual,
           orden: 1,
+          created_by: usuarioId,
         },
       });
 
       // E. Obtener el producto de la vista
       const rows = await this.prisma.queryRaw(
         `SELECT * FROM public.vw_productos_pos WHERE producto_comercial_id = $1::uuid AND presentacion_id = $2::uuid LIMIT 1`,
-        [dto.producto_comercial_id, presentacion.unidad_presentacion_id],
+        [dto.producto_comercial_id, presentacion.id],
       );
 
-      if (!rows || rows.length === 0) {
-        throw new NotFoundException('Error al recuperar el producto creado');
-      }
-
-      return ProductoMapper.toListaItem(rows[0]);
+      return rows?.length ? ProductoMapper.toListaItem(rows[0]) : {
+        producto_comercial_id: dto.producto_comercial_id,
+        presentacion_id: presentacion.id,
+        mensaje: 'Presentación registrada correctamente.',
+      };
     }
 
     // --- CASO 2: CREAR PRODUCTO NUEVO ---
@@ -348,6 +382,7 @@ export class ProductosService {
 
     // 4. Ejecutar creación transaccional
     const result = await this.prisma.$transaction(async (tx) => {
+      await validarReferencias(tx);
       // A. Buscar o crear Medicamento
       let medicamento = await tx.medicamentos.findFirst({
         where: {
@@ -371,6 +406,7 @@ export class ProductosService {
             via_administracion: dto.via_administracion!,
             requiere_receta: dto.requiere_receta ?? false,
             afecto_igv: dto.afecto_igv ?? true,
+            created_by: usuarioId,
           },
         });
       }
@@ -388,12 +424,16 @@ export class ProductosService {
            categoria_id: dto.categoria_id!,
            unidad_base_id: unidadBaseId,
            estado: 'ACTIVO',
+           created_by: usuarioId,
          },
        });
 
-      // C. Crear todas las presentaciones de venta junto al producto.
-      await tx.productos_presentaciones.createMany({
-        data: presentaciones.map((pres, index) => ({
+      // C. Crear presentaciones individualmente para conservar el ID real de
+      // la fila. La vista POS usa pp.id, no unidad_presentacion_id.
+      const presentacionesCreadas = [];
+      for (const [index, pres] of presentaciones.entries()) {
+        presentacionesCreadas.push(await tx.productos_presentaciones.create({
+          data: {
           botica_id: boticaId,
           producto_comercial_id: productoComercial.id,
           unidad_presentacion_id: pres.unidad_presentacion_id,
@@ -401,12 +441,20 @@ export class ProductosService {
           codigo_barras: pres.codigo_barras?.trim() || null,
           precio_actual: Number(pres.precio_actual),
           orden: index + 1,
-        })),
-      });
+          created_by: usuarioId,
+        },
+        }));
+      }
+      const presentacionBase = presentacionesCreadas.find(
+        (pres: any) => pres.unidad_presentacion_id === unidadBaseId,
+      );
+      if (!presentacionBase) {
+        throw new BadRequestException('No se pudo crear la presentación base del producto.');
+      }
 
       return {
         productoComercialId: productoComercial.id,
-        presentacionId: unidadBaseId,
+        presentacionId: presentacionBase.id,
       };
     });
 
@@ -416,11 +464,14 @@ export class ProductosService {
       [result.productoComercialId, result.presentacionId],
     );
 
-    if (!rows || rows.length === 0) {
-      throw new NotFoundException('Error al recuperar el producto creado');
-    }
-
-    return ProductoMapper.toListaItem(rows[0]);
+    // La creación ya fue confirmada por la transacción. Nunca reportamos un
+    // 404 después de guardar: ante una vista desactualizada devolvemos IDs
+    // válidos para que el frontend recargue el listado.
+    return rows?.length ? ProductoMapper.toListaItem(rows[0]) : {
+      producto_comercial_id: result.productoComercialId,
+      presentacion_id: result.presentacionId,
+      mensaje: 'Producto creado correctamente. Actualiza el listado para visualizarlo.',
+    };
   }
 
   /**

@@ -33,6 +33,8 @@ import {
   ICatalogoListaResponse,
 } from './interfaces/catalogo.interface';
 import { TenantGuard } from '../../auth/guards/tenant.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
 
 @ApiTags('Catálogos Maestros')
 @ApiBearerAuth()
@@ -78,6 +80,8 @@ export class CatalogosController {
   }
 
   @Post(':tipo')
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Crear un nuevo item en el catálogo' })
   @ApiParam({ name: 'tipo', enum: TIPOS_CATALOGO })
@@ -94,6 +98,8 @@ export class CatalogosController {
   }
 
   @Patch(':tipo/:id')
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Actualizar un item del catálogo' })
   @ApiParam({ name: 'tipo', enum: TIPOS_CATALOGO })
@@ -113,6 +119,8 @@ export class CatalogosController {
   }
 
   @Delete(':tipo/:id')
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Eliminar lógicamente un item del catálogo (Soft Delete)',

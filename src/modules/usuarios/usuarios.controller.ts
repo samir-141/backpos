@@ -18,6 +18,8 @@ import { UsuariosService } from './usuarios.service';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
 import { UpdateUsuarioDto } from './dto/update-usuario.dto';
 import { TenantGuard } from '../../auth/guards/tenant.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
 
 @ApiTags('Usuarios & Administración')
 @Controller('usuarios')
@@ -38,6 +40,8 @@ export class UsuariosController {
   }
 
   @Put('roles/:rolId/permisos')
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @ApiOperation({ summary: 'Actualizar los permisos asignados a un rol' })
   actualizarRolPermisos(
     @Param('rolId') rolId: string,
@@ -54,6 +58,8 @@ export class UsuariosController {
   }
 
   @Post('sucursales')
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Registrar nueva sucursal' })
   createSucursal(
@@ -70,6 +76,8 @@ export class UsuariosController {
   }
 
   @Post()
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Registrar un nuevo usuario' })
   create(@Body() createDto: CreateUsuarioDto, @Request() req: any) {
@@ -77,12 +85,16 @@ export class UsuariosController {
   }
 
   @Patch(':id')
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @ApiOperation({ summary: 'Actualizar información o contraseña de usuario' })
   update(@Param('id') id: string, @Body() updateDto: UpdateUsuarioDto, @Request() req: any) {
     return this.usuariosService.update(req.botica_id, id, updateDto);
   }
 
   @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @ApiOperation({ summary: 'Eliminar usuario (soft delete)' })
   remove(@Param('id') id: string, @Request() req: any) {
     return this.usuariosService.remove(req.botica_id, id);

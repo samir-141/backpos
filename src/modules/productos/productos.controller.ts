@@ -84,7 +84,7 @@ export class ProductosController {
       'Crear un nuevo producto con su medicamento y presentación inicial',
   })
   create(@Body() createDto: CreateProductoDto, @Request() req: any) {
-    return this.productosService.create(req.botica_id, createDto);
+    return this.productosService.create(req.botica_id, createDto, req.user.id);
   }
 
   @Patch(':id')

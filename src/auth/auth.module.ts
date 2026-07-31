@@ -6,6 +6,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { TenantGuard } from './guards/tenant.guard';
+import { RolesGuard } from './guards/roles.guard';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
@@ -17,14 +18,14 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
         secret: configService.get('JWT_SECRET'),
-        signOptions: { expiresIn: '8h' },
+        signOptions: { expiresIn: configService.get('JWT_EXPIRES_IN') || '8h' },
       }),
       inject: [ConfigService],
     }),
     PrismaModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, TenantGuard],
-  exports: [AuthService, TenantGuard],
+  providers: [AuthService, JwtStrategy, TenantGuard, RolesGuard],
+  exports: [AuthService, TenantGuard, RolesGuard],
 })
 export class AuthModule {}
