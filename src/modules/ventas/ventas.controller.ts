@@ -57,7 +57,7 @@ export class VentasController {
   @ApiOperation({ summary: 'Obtener historial de movimientos de stock de un producto' })
   getStockHistory(
     @Query('producto_comercial_id') productoComercialId: string,
-    @Query('sucursal_id') sucursalId?: string,
+    @Query('sucursal_id') sucursalId: string | undefined,
     @Request() req: any,
   ) {
     return this.ventasService.getStockHistory(
@@ -71,8 +71,8 @@ export class VentasController {
   @ApiOperation({ summary: 'Obtener proyección de stock para un producto' })
   getStockProjection(
     @Query('producto_comercial_id') productoComercialId: string,
-    @Query('sucursal_id') sucursalId?: string,
-    @Query('dias') diasProyeccion?: number,
+    @Query('sucursal_id') sucursalId: string | undefined,
+    @Query('dias') diasProyeccion: number | undefined,
     @Request() req: any,
   ) {
     return this.ventasService.proyeccionStock(

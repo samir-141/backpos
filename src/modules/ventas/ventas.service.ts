@@ -153,7 +153,7 @@ export class VentasService {
       // 5. Procesar los Detalles de la Venta y Descontar Stock FEFO Multilote
       for (const item of dto.items) {
         // A. Obtener presentación del producto coincidente con la selección del usuario
-        let presentacion = null;
+        let presentacion: any = null;
         if ((item as any).producto_presentacion_id) {
           presentacion = await tx.productos_presentaciones.findFirst({
             where: {
@@ -509,24 +509,24 @@ export class VentasService {
     const whereMov: any = {
       deleted_at: null,
       botica_id: boticaId,
-      lote: {
+      lotes: {
         producto_comercial_id: productoComercialId,
       },
     };
     if (sucursalId) {
-      whereMov.lote.sucursal_id = sucursalId;
+      whereMov.lotes.sucursal_id = sucursalId;
     }
 
     const movimientos = await this.prisma.movimientos_inventario.findMany({
       where: whereMov,
       include: {
-        lote: {
+        lotes: {
           select: { numero_lote: true, stock_actual: true },
         },
-        tipo_movimiento: {
-          select: { codigo: true, nombre: true },
+        tipos_movimientos_inventario: {
+          select: { codigo: true, descripcion: true },
         },
-        usuario: {
+        usuarios: {
           select: { nombre: true },
         },
       },
@@ -534,7 +534,20 @@ export class VentasService {
       take: 100,
     });
 
-    return movimientos;
+    return movimientos.map((m: any) => {
+      const { lotes, tipos_movimientos_inventario, usuarios, ...rest } = m;
+      return {
+        ...rest,
+        lote: lotes,
+        tipo_movimiento: tipos_movimientos_inventario
+          ? {
+              codigo: tipos_movimientos_inventario.codigo,
+              nombre: tipos_movimientos_inventario.descripcion,
+            }
+          : null,
+        usuario: usuarios,
+      };
+    });
   }
 
   async proyeccionStock(
@@ -572,18 +585,22 @@ export class VentasService {
 
       const hoy = new Date();
       hoy.setHours(0, 0, 0, 0);
-      const loteActivo = await this.prisma.lotes.findFirst({
-      where: {
+      const whereLote: any = {
         botica_id: boticaId,
         producto_comercial_id: productoComercialId,
-        sucursal_id: sucursalId || { not: null },
-          deleted_at: null,
-          stock_actual: { gt: 0 },
-          fecha_vencimiento: { gte: hoy },
-      },
-      orderBy: { fecha_vencimiento: 'asc' },
-      select: { stock_actual: true, fecha_vencimiento: true },
-    });
+        deleted_at: null,
+        stock_actual: { gt: 0 },
+        fecha_vencimiento: { gte: hoy },
+      };
+      if (sucursalId) {
+        whereLote.sucursal_id = sucursalId;
+      }
+
+      const loteActivo = await this.prisma.lotes.findFirst({
+        where: whereLote,
+        orderBy: { fecha_vencimiento: 'asc' },
+        select: { stock_actual: true, fecha_vencimiento: true },
+      });
 
     const stockActual = loteActivo?.stock_actual ?? 0;
     const diasStockRestante =
