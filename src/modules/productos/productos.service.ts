@@ -139,7 +139,10 @@ export class ProductosService {
       paramIndex++;
     }
 
-    if (query.sucursal_id) {
+    const isUuid = (val: string) =>
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+
+    if (query.sucursal_id && isUuid(query.sucursal_id)) {
       condiciones.push(
         `producto_comercial_id IN (SELECT DISTINCT producto_comercial_id FROM public.lotes WHERE sucursal_id = $${paramIndex}::uuid AND deleted_at IS NULL AND stock_actual > 0)`,
       );
@@ -360,6 +363,7 @@ export class ProductosService {
       if (!medicamento) {
         medicamento = await tx.medicamentos.create({
           data: {
+            botica_id: boticaId,
             principio_activo_id: dto.principio_activo_id!,
             forma_farmaceutica_id: dto.forma_farmaceutica_id!,
             concentracion: dto.concentracion!,
