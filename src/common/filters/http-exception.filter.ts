@@ -40,7 +40,34 @@ export class HttpExceptionFilter implements ExceptionFilter {
       // Tratar errores de Prisma de forma segura sin exponer stack traces
       if (err.code === 'P2002') {
         status = HttpStatus.CONFLICT;
-        message = 'Ya existe un registro con esos datos únicos en el sistema.';
+        const target = err.meta?.target;
+        let targetStr = '';
+        if (Array.isArray(target)) {
+          targetStr = target.map((t) => String(t).toLowerCase()).join(', ');
+        } else if (typeof target === 'string') {
+          targetStr = target.toLowerCase();
+        }
+
+        if (targetStr.includes('ruc')) {
+          message = 'El RUC ingresado ya está registrado en otra empresa.';
+        } else if (targetStr.includes('correo') || targetStr.includes('email')) {
+          message = 'El correo electrónico del responsable o colaborador ya está registrado.';
+        } else if (targetStr.includes('metodos_pago') || targetStr.includes('nombre_activo')) {
+          message = 'El nombre o método de pago ingresado ya existe en el sistema.';
+        } else if (targetStr.includes('serie')) {
+          message = 'La serie ingresada para el comprobante ya existe en esta sucursal.';
+        } else {
+          message = 'Ya existe un registro con esos datos únicos en el sistema.';
+          if (targetStr) {
+            const cleanTarget = targetStr
+              .replace(/idx_/g, '')
+              .replace(/_activo/g, '')
+              .replace(/_key/g, '')
+              .replace(/_unico/g, '')
+              .replace(/_/g, ' ');
+            message += ` (Dato duplicado: ${cleanTarget})`;
+          }
+        }
       } else if (err.code === 'P2025') {
         status = HttpStatus.NOT_FOUND;
         message = 'El registro solicitado no existe o fue eliminado.';
