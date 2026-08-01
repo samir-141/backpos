@@ -36,7 +36,6 @@ export class ProductosService {
         id,
         deleted_at: null,
         botica_id: boticaId,
-        medicamentos: { deleted_at: null },
       },
       include: {
         medicamentos: {
@@ -204,6 +203,7 @@ export class ProductosService {
     // ingresar lotes/stock. Normalizamos antes de validar y persistir.
     dto = {
       ...dto,
+      tipo_producto: String(dto.tipo_producto || 'MEDICAMENTO').trim().toUpperCase(),
       nombre_comercial: dto.nombre_comercial?.trim(),
       sku: dto.sku?.trim().toUpperCase(),
       codigo_interno: dto.codigo_interno?.trim() || undefined,
@@ -216,6 +216,11 @@ export class ProductosService {
         codigo_barras: pres.codigo_barras?.trim() || undefined,
       })),
     };
+    const esMedicamento = dto.tipo_producto === 'MEDICAMENTO';
+    const tiposPermitidos = ['MEDICAMENTO', 'HIGIENE', 'BEBE', 'COSMETICO', 'ACCESORIO', 'OTRO'];
+    if (!tiposPermitidos.includes(dto.tipo_producto!)) {
+      throw new BadRequestException('Tipo de producto no válido.');
+    }
     const unidadBaseId = dto.unidad_base_id || dto.presentacion_id;
     const presentaciones = dto.presentaciones?.length
       ? dto.presentaciones
@@ -249,7 +254,7 @@ export class ProductosService {
         dto.categoria_id ? tx.categorias.findFirst({ where: { id: dto.categoria_id, botica_id: boticaId, deleted_at: null }, select: { id: true } }) : null,
         ...[...new Set(presentaciones.map((p) => p.unidad_presentacion_id))].map((id) => tx.unidades_presentacion.findFirst({ where: { id, botica_id: boticaId, deleted_at: null }, select: { id: true } })),
       ]);
-      if (!principio || !forma || !laboratorio || !categoria || unidades.some((unidad) => !unidad)) {
+      if ((esMedicamento && (!principio || !forma)) || !categoria || unidades.some((unidad) => !unidad) || (dto.laboratorio_id && !laboratorio)) {
         throw new BadRequestException('Uno o más catálogos seleccionados no existen, están inactivos o pertenecen a otra botica.');
       }
     };
@@ -333,17 +338,23 @@ export class ProductosService {
     if (
       !dto.nombre_comercial ||
       !dto.sku ||
-      !dto.principio_activo_id ||
-      !dto.forma_farmaceutica_id ||
-      !dto.laboratorio_id ||
       !dto.categoria_id ||
-      dto.concentracion === undefined ||
-      !dto.unidad_concentracion ||
-      !dto.via_administracion
+      !dto.presentacion_id ||
+      dto.cantidad_unidad_base === undefined ||
+      dto.precio_actual === undefined
     ) {
       throw new BadRequestException(
         'Faltan campos obligatorios para registrar un nuevo producto.',
       );
+    }
+    if (esMedicamento && (
+      !dto.principio_activo_id ||
+      !dto.forma_farmaceutica_id ||
+      dto.concentracion === undefined ||
+      !dto.unidad_concentracion ||
+      !dto.via_administracion
+    )) {
+      throw new BadRequestException('La ficha farmacéutica requiere principio activo, forma, concentración y vía de administración.');
     }
 
     // 1. Validar SKU único en productos comerciales activos
@@ -383,32 +394,34 @@ export class ProductosService {
     // 4. Ejecutar creación transaccional
     const result = await this.prisma.$transaction(async (tx) => {
       await validarReferencias(tx);
-      // A. Buscar o crear Medicamento
-      let medicamento = await tx.medicamentos.findFirst({
-        where: {
-          principio_activo_id: dto.principio_activo_id,
-          forma_farmaceutica_id: dto.forma_farmaceutica_id,
-          concentracion: dto.concentracion,
-          unidad_concentracion: dto.unidad_concentracion,
-          via_administracion: dto.via_administracion,
-          deleted_at: null,
-        },
-      });
-
-      if (!medicamento) {
-        medicamento = await tx.medicamentos.create({
-          data: {
-            botica_id: boticaId,
-            principio_activo_id: dto.principio_activo_id!,
-            forma_farmaceutica_id: dto.forma_farmaceutica_id!,
-            concentracion: dto.concentracion!,
-            unidad_concentracion: dto.unidad_concentracion!,
-            via_administracion: dto.via_administracion!,
-            requiere_receta: dto.requiere_receta ?? false,
-            afecto_igv: dto.afecto_igv ?? true,
-            created_by: usuarioId,
+      // A. La ficha farmacéutica existe únicamente para medicamentos.
+      let medicamento: any = null;
+      if (esMedicamento) {
+        medicamento = await tx.medicamentos.findFirst({
+          where: {
+            principio_activo_id: dto.principio_activo_id,
+            forma_farmaceutica_id: dto.forma_farmaceutica_id,
+            concentracion: dto.concentracion,
+            unidad_concentracion: dto.unidad_concentracion,
+            via_administracion: dto.via_administracion,
+            deleted_at: null,
           },
         });
+        if (!medicamento) {
+          medicamento = await tx.medicamentos.create({
+            data: {
+              botica_id: boticaId,
+              principio_activo_id: dto.principio_activo_id!,
+              forma_farmaceutica_id: dto.forma_farmaceutica_id!,
+              concentracion: dto.concentracion!,
+              unidad_concentracion: dto.unidad_concentracion!,
+              via_administracion: dto.via_administracion!,
+              requiere_receta: dto.requiere_receta ?? false,
+              afecto_igv: dto.afecto_igv ?? true,
+              created_by: usuarioId,
+            },
+          });
+        }
       }
 
 // B. Crear Producto Comercial
@@ -419,10 +432,14 @@ export class ProductosService {
            sku: dto.sku!,
            codigo_interno: dto.codigo_interno || null,
            registro_sanitario: dto.registro_sanitario || null,
-           medicamento_id: medicamento.id,
-           laboratorio_id: dto.laboratorio_id!,
+           medicamento_id: medicamento?.id || null,
+           laboratorio_id: dto.laboratorio_id || null,
            categoria_id: dto.categoria_id!,
            unidad_base_id: unidadBaseId,
+           tipo_producto: dto.tipo_producto,
+           controla_lote: dto.controla_lote ?? true,
+           requiere_vencimiento: dto.requiere_vencimiento ?? esMedicamento,
+           atributos: dto.atributos || null,
            estado: 'ACTIVO',
            created_by: usuarioId,
          },
@@ -515,22 +532,23 @@ export class ProductosService {
         nombre_comercial: pres.productos_comerciales.nombre_comercial,
         sku: pres.productos_comerciales.sku,
         codigo_interno: pres.productos_comerciales.codigo_interno,
+        tipo_producto: pres.productos_comerciales.tipo_producto,
         principio_activo_id:
-          pres.productos_comerciales.medicamentos.principio_activo_id,
+          pres.productos_comerciales.medicamentos?.principio_activo_id || null,
         forma_farmaceutica_id:
-          pres.productos_comerciales.medicamentos.forma_farmaceutica_id,
+          pres.productos_comerciales.medicamentos?.forma_farmaceutica_id || null,
         laboratorio_id: pres.productos_comerciales.laboratorio_id,
         categoria_id: pres.productos_comerciales.categoria_id,
         concentracion: Number(
-          pres.productos_comerciales.medicamentos.concentracion,
+          pres.productos_comerciales.medicamentos?.concentracion || 0,
         ),
         unidad_concentracion:
-          pres.productos_comerciales.medicamentos.unidad_concentracion,
+          pres.productos_comerciales.medicamentos?.unidad_concentracion || null,
         via_administracion:
-          pres.productos_comerciales.medicamentos.via_administracion,
+          pres.productos_comerciales.medicamentos?.via_administracion || null,
         requiere_receta:
-          pres.productos_comerciales.medicamentos.requiere_receta,
-        afecto_igv: pres.productos_comerciales.medicamentos.afecto_igv,
+          pres.productos_comerciales.medicamentos?.requiere_receta || false,
+        afecto_igv: pres.productos_comerciales.medicamentos?.afecto_igv ?? true,
       };
     }
 
@@ -561,11 +579,12 @@ export class ProductosService {
         nombre_comercial: prod.nombre_comercial,
         sku: prod.sku,
         codigo_interno: prod.codigo_interno,
-        principio_activo_id: prod.medicamentos.principio_activo_id,
-        forma_farmaceutica_id: prod.medicamentos.forma_farmaceutica_id,
+        tipo_producto: prod.tipo_producto,
+        principio_activo_id: prod.medicamentos?.principio_activo_id || null,
+        forma_farmaceutica_id: prod.medicamentos?.forma_farmaceutica_id || null,
         laboratorio_id: prod.laboratorio_id,
         categoria_id: prod.categoria_id,
-        concentracion: Number(prod.medicamentos.concentracion),
+        concentracion: Number(prod.medicamentos?.concentracion || 0),
         unidad_concentracion: prod.medicamentos.unidad_concentracion,
         via_administracion: prod.medicamentos.via_administracion,
         requiere_receta: prod.medicamentos.requiere_receta,
@@ -616,7 +635,11 @@ export class ProductosService {
       // A. Si se envían datos del producto comercial (nombre_comercial, registro_sanitario)
       if (
         dto.nombre_comercial !== undefined ||
-        dto.registro_sanitario !== undefined
+        dto.registro_sanitario !== undefined ||
+        dto.tipo_producto !== undefined ||
+        dto.atributos !== undefined ||
+        dto.controla_lote !== undefined ||
+        dto.requiere_vencimiento !== undefined
       ) {
         const updateProdComercial: any = {};
         if (dto.nombre_comercial !== undefined)
@@ -624,6 +647,10 @@ export class ProductosService {
         if (dto.registro_sanitario !== undefined)
           updateProdComercial.registro_sanitario =
             dto.registro_sanitario || null;
+        if (dto.tipo_producto !== undefined) updateProdComercial.tipo_producto = dto.tipo_producto;
+        if (dto.atributos !== undefined) updateProdComercial.atributos = dto.atributos || null;
+        if (dto.controla_lote !== undefined) updateProdComercial.controla_lote = dto.controla_lote;
+        if (dto.requiere_vencimiento !== undefined) updateProdComercial.requiere_vencimiento = dto.requiere_vencimiento;
 
         await tx.productos_comerciales.update({
           where: { id },
@@ -632,7 +659,7 @@ export class ProductosService {
       }
 
       // B. Si se envían flags del medicamento, actualizar el medicamento correspondiente
-      if (dto.requiere_receta !== undefined || dto.afecto_igv !== undefined) {
+      if ((dto.requiere_receta !== undefined || dto.afecto_igv !== undefined) && productoComercial.medicamento_id) {
         const updateData: any = {};
         if (dto.requiere_receta !== undefined)
           updateData.requiere_receta = dto.requiere_receta;
@@ -750,25 +777,11 @@ export class ProductosService {
     producto_comercial_id: string;
     sucursal_id?: string;
     numero_lote: string;
-    fecha_vencimiento: string;
+    fecha_vencimiento?: string;
     stock_adicional: number;
     precio_compra_base: number;
   }, usuarioId: string) {
-    const numeroLote = dto.numero_lote.trim().toUpperCase();
-    const [anioVencimiento, mesVencimiento, diaVencimiento] = dto.fecha_vencimiento
-      .slice(0, 10)
-      .split('-')
-      .map(Number);
-    const vencimientoSolicitado = new Date(
-      anioVencimiento,
-      mesVencimiento - 1,
-      diaVencimiento,
-    );
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    if (Number.isNaN(vencimientoSolicitado.getTime()) || vencimientoSolicitado < hoy) {
-      throw new BadRequestException('No se puede ingresar stock con una fecha de vencimiento pasada.');
-    }
+    const numeroLote = dto.numero_lote?.trim().toUpperCase() || '';
     this.logger.log(
       `Reabasteciendo ${dto.stock_adicional} unidades para el producto: ${dto.producto_comercial_id}`,
     );
@@ -792,6 +805,24 @@ export class ProductosService {
       throw new NotFoundException(
         `Producto comercial con ID ${dto.producto_comercial_id} no encontrado.`,
       );
+    }
+
+    const requiereVencimiento = producto.requiere_vencimiento;
+    let vencimientoSolicitado: Date | null = null;
+    if (requiereVencimiento) {
+      if (!dto.fecha_vencimiento) {
+        throw new BadRequestException('La fecha de vencimiento es obligatoria para este producto.');
+      }
+      const [anioVencimiento, mesVencimiento, diaVencimiento] = dto.fecha_vencimiento
+        .slice(0, 10)
+        .split('-')
+        .map(Number);
+      vencimientoSolicitado = new Date(anioVencimiento, mesVencimiento - 1, diaVencimiento);
+      const hoy = new Date();
+      hoy.setHours(0, 0, 0, 0);
+      if (Number.isNaN(vencimientoSolicitado.getTime()) || vencimientoSolicitado < hoy) {
+        throw new BadRequestException('No se puede ingresar stock con una fecha de vencimiento pasada.');
+      }
     }
 
     if (!usuarioId) {
@@ -826,8 +857,8 @@ export class ProductosService {
           cantidad: Number(dto.stock_adicional),
           stock_anterior: stockAnterior,
           stock_nuevo: stockNuevo,
-          documento_referencia: numeroLote,
-          observacion: `Ingreso manual del lote ${numeroLote}`,
+          documento_referencia: numeroLote || 'SIN-LOTE',
+          observacion: `Ingreso manual del ${producto.controla_lote ? `lote ${numeroLote}` : 'producto sin control de lote'}`,
           created_by: usuarioId,
         },
       });
@@ -842,7 +873,7 @@ export class ProductosService {
           sucursal_id: sucursalId,
           tipo: 'INVERSION',
           categoria: 'COMPRA_INVENTARIO',
-          descripcion: `Compra de inventario: lote ${numeroLote}`,
+          descripcion: `Compra de inventario: ${producto.controla_lote ? `lote ${numeroLote}` : 'producto sin lote'}`,
           monto: Number(dto.stock_adicional) * Number(dto.precio_compra_base),
           comprobante: `MOV-${movimientoId}`,
         },
@@ -861,11 +892,11 @@ export class ProductosService {
 
     if (loteExistente) {
       if (
-        loteExistente.fecha_vencimiento.toISOString().slice(0, 10) !==
-        vencimientoSolicitado.toISOString().slice(0, 10)
+        loteExistente.fecha_vencimiento?.toISOString().slice(0, 10) !==
+        vencimientoSolicitado?.toISOString().slice(0, 10)
       ) {
         throw new BadRequestException(
-          `El lote ${numeroLote} ya existe y vence el ${loteExistente.fecha_vencimiento.toISOString().slice(0, 10)}. No se puede mezclar con otro vencimiento.`,
+          `El lote ${numeroLote} ya existe y tiene una fecha de vencimiento distinta. No se puede mezclar con otro vencimiento.`,
         );
       }
       const loteActualizado = await this.prisma.lotes.update({
@@ -905,7 +936,7 @@ export class ProductosService {
           producto_comercial_id: dto.producto_comercial_id,
           sucursal_id: sucursalId,
           numero_lote:
-            numeroLote || `LOTE-${Date.now().toString().slice(-6)}`,
+            numeroLote || `SIN-LOTE-${Date.now().toString().slice(-6)}`,
           fecha_vencimiento: vencimientoSolicitado,
           precio_compra_unidad_base: dto.precio_compra_base || 0,
           stock_actual: Number(dto.stock_adicional),

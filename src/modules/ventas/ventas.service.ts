@@ -191,17 +191,24 @@ export class VentasService {
         );
         let unidadesPendientes = item.cantidad * equivBase;
 
-        // Obtener todos los lotes disponibles ordenados por vencimiento (FEFO) para la sucursal
-          const hoy = new Date();
-          hoy.setHours(0, 0, 0, 0);
-          const lotesDisponibles = await tx.lotes.findMany({
-          where: {
-            producto_comercial_id: item.producto_comercial_id,
-            sucursal_id: finalSucursalId,
-              deleted_at: null,
-              stock_actual: { gt: 0 },
-              fecha_vencimiento: { gte: hoy },
-          },
+        // FEFO se aplica solo cuando el producto tiene vencimiento. Los productos
+        // generales sin vencimiento conservan el mismo descuento atómico de stock.
+        const producto = await tx.productos_comerciales.findFirst({
+          where: { id: item.producto_comercial_id, botica_id: boticaId, deleted_at: null },
+          select: { requiere_vencimiento: true },
+        });
+        if (!producto) throw new BadRequestException('El producto seleccionado ya no está disponible.');
+        const hoy = new Date();
+        hoy.setHours(0, 0, 0, 0);
+        const whereLotes: any = {
+          producto_comercial_id: item.producto_comercial_id,
+          sucursal_id: finalSucursalId,
+          deleted_at: null,
+          stock_actual: { gt: 0 },
+        };
+        if (producto.requiere_vencimiento) whereLotes.fecha_vencimiento = { gte: hoy };
+        const lotesDisponibles = await tx.lotes.findMany({
+          where: whereLotes,
           orderBy: [{ fecha_vencimiento: 'asc' }, { stock_actual: 'desc' }],
         });
 

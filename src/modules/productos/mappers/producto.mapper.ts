@@ -33,27 +33,21 @@ export class ProductoMapper {
       codigo_interno: producto.codigo_interno,
       estado: producto.estado,
       created_at: producto.created_at,
-      medicamento: {
+      tipo_producto: producto.tipo_producto || 'MEDICAMENTO',
+      controla_lote: Boolean(producto.controla_lote),
+      requiere_vencimiento: Boolean(producto.requiere_vencimiento),
+      atributos: producto.atributos || null,
+      medicamento: producto.medicamentos ? {
         id: producto.medicamentos.id,
         concentracion: toNumber(producto.medicamentos.concentracion),
         unidad_concentracion: producto.medicamentos.unidad_concentracion,
         via_administracion: producto.medicamentos.via_administracion,
         requiere_receta: producto.medicamentos.requiere_receta,
         afecto_igv: producto.medicamentos.afecto_igv,
-        principio_activo: {
-          id: producto.medicamentos.principios_activos.id,
-          nombre: producto.medicamentos.principios_activos.nombre,
-        },
-        forma_farmaceutica: {
-          id: producto.medicamentos.formas_farmaceuticas.id,
-          nombre: producto.medicamentos.formas_farmaceuticas.nombre,
-        },
-      },
-      laboratorio: {
-        id: producto.laboratorios.id,
-        nombre: producto.laboratorios.nombre,
-        pais: producto.laboratorios.pais,
-      },
+        principio_activo: { id: producto.medicamentos.principios_activos.id, nombre: producto.medicamentos.principios_activos.nombre },
+        forma_farmaceutica: { id: producto.medicamentos.formas_farmaceuticas.id, nombre: producto.medicamentos.formas_farmaceuticas.nombre },
+      } : null,
+      laboratorio: producto.laboratorios ? { id: producto.laboratorios.id, nombre: producto.laboratorios.nombre, pais: producto.laboratorios.pais } : null,
       categoria: {
         id: producto.categorias.id,
         nombre: producto.categorias.nombre,
@@ -91,6 +85,10 @@ export class ProductoMapper {
   static toListaItem(row: any): ProductoListaItemResponse {
     return {
       producto_comercial_id: row.producto_comercial_id,
+      tipo_producto: row.tipo_producto || 'MEDICAMENTO',
+      controla_lote: Boolean(row.controla_lote),
+      requiere_vencimiento: Boolean(row.requiere_vencimiento),
+      atributos: row.atributos || null,
       nombre_comercial: row.nombre_comercial,
       sku: row.sku,
       codigo_interno: row.codigo_interno,

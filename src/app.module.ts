@@ -21,6 +21,7 @@ import { CajasModule } from './modules/cajas/cajas.module';
 import { PosventaModule } from './modules/posventa/posventa.module';
 import { GastosModule } from './modules/gastos/gastos.module';
 import { SeriesDocumentosModule } from './modules/series-documentos/series-documentos.module';
+import { AdministracionGeneralModule } from './modules/administracion-general/administracion-general.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { SeriesDocumentosModule } from './modules/series-documentos/series-docum
     PosventaModule,
     GastosModule,
     SeriesDocumentosModule,
+    AdministracionGeneralModule,
   ],
   controllers: [AppController, TestController],
   providers: [AppService],

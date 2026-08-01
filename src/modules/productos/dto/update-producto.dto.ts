@@ -10,6 +10,24 @@ import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateProductoDto {
+  @ApiPropertyOptional({ description: 'Tipo de producto' })
+  @IsOptional()
+  @IsString()
+  tipo_producto?: string;
+
+  @ApiPropertyOptional({ description: 'Atributos: talla, color, modelo, etc.' })
+  @IsOptional()
+  atributos?: Record<string, string>;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  controla_lote?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  requiere_vencimiento?: boolean;
   @ApiPropertyOptional({ description: 'Precio actual de venta (con IGV)' })
   @IsOptional()
   @Type(() => Number)

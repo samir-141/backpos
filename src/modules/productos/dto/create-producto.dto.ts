@@ -34,6 +34,24 @@ export class PresentacionProductoDto {
 }
 
 export class CreateProductoDto {
+  @ApiPropertyOptional({ enum: ['MEDICAMENTO', 'HIGIENE', 'BEBE', 'COSMETICO', 'ACCESORIO', 'OTRO'] })
+  @IsOptional()
+  @IsString()
+  tipo_producto?: string;
+
+  @ApiPropertyOptional({ description: 'Indica si el producto se controla por lotes' })
+  @IsOptional()
+  @IsBoolean()
+  controla_lote?: boolean;
+
+  @ApiPropertyOptional({ description: 'Indica si se registra vencimiento al ingresar stock' })
+  @IsOptional()
+  @IsBoolean()
+  requiere_vencimiento?: boolean;
+
+  @ApiPropertyOptional({ description: 'Atributos del producto general: talla, color, modelo, etc.' })
+  @IsOptional()
+  atributos?: Record<string, string>;
   @ApiPropertyOptional({
     description:
       'ID del producto comercial existente si ya existe y solo se agrega una presentación',

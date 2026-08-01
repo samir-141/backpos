@@ -328,7 +328,7 @@ model lotes {
   botica_id                           String                   @db.Uuid
   numero_lote                         String                   @db.VarChar(50)
   fecha_fabricacion                   DateTime?                @db.Date
-  fecha_vencimiento                   DateTime                 @db.Date
+  fecha_vencimiento                   DateTime?                @db.Date
   precio_compra_unidad_base           Decimal                  @db.Decimal(15, 4)
   stock_actual                        Int                      @default(0)
   fecha_ingreso                       DateTime?                @default(now()) @db.Timestamptz(6)
@@ -548,10 +548,14 @@ model principios_activos {
 model productos_comerciales {
   id                                                  String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   botica_id                                           String                     @db.Uuid
-  medicamento_id                                      String                     @db.Uuid
-  laboratorio_id                                      String                     @db.Uuid
+  medicamento_id                                      String?                    @db.Uuid
+  laboratorio_id                                      String?                    @db.Uuid
   categoria_id                                        String                     @db.Uuid
   unidad_base_id                                      String                     @db.Uuid
+  tipo_producto                                       String                     @default("MEDICAMENTO") @db.VarChar(30)
+  controla_lote                                       Boolean                    @default(true)
+  requiere_vencimiento                                Boolean                    @default(true)
+  atributos                                           Json?
   sku                                                 String?                    @unique(map: "idx_productos_sku_activo", where: raw("((deleted_at IS NULL) AND (sku IS NOT NULL))")) @db.VarChar(50)
   nombre_comercial                                    String                     @db.VarChar(150)
   registro_sanitario                                  String?                    @db.VarChar(50)
@@ -569,8 +573,8 @@ model productos_comerciales {
   categorias                                          categorias                 @relation(fields: [categoria_id], references: [id], onUpdate: NoAction)
   usuarios_productos_comerciales_created_byTousuarios usuarios?                  @relation("productos_comerciales_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
   usuarios_productos_comerciales_deleted_byTousuarios usuarios?                  @relation("productos_comerciales_deleted_byTousuarios", fields: [deleted_by], references: [id], onUpdate: NoAction)
-  laboratorios                                        laboratorios               @relation(fields: [laboratorio_id], references: [id], onUpdate: NoAction)
-  medicamentos                                        medicamentos               @relation(fields: [medicamento_id], references: [id], onUpdate: NoAction)
+  laboratorios                                        laboratorios?              @relation(fields: [laboratorio_id], references: [id], onUpdate: NoAction)
+  medicamentos                                        medicamentos?              @relation(fields: [medicamento_id], references: [id], onUpdate: NoAction)
   unidades_presentacion                               unidades_presentacion      @relation(fields: [unidad_base_id], references: [id], onUpdate: NoAction)
   usuarios_productos_comerciales_updated_byTousuarios usuarios?                  @relation("productos_comerciales_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   productos_presentaciones                            productos_presentaciones[]

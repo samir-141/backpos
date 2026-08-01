@@ -108,7 +108,7 @@ export class ProductosController {
       producto_comercial_id: string;
       sucursal_id?: string;
       numero_lote: string;
-      fecha_vencimiento: string;
+      fecha_vencimiento?: string;
       stock_adicional: number;
       precio_compra_base: number;
     },
