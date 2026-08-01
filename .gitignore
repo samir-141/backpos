@@ -28,7 +28,6 @@
 # ==============================================================================
 # Prisma
 /generated/prisma
-/prisma/migrations/**/*.sql
 # Si usas SQLite local para pruebas rápidas
 *.db
 *.db-journal

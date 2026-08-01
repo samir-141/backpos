@@ -1,0 +1,4 @@
+-- Identidad de plataforma explícita. El valor por defecto conserva a todos los
+-- usuarios existentes como administradores de su propia botica, no de la red.
+-- NOTA: La migración 20260731180000_administracion_general ya creó la
+-- columna es_super_admin. Se remueve el ADD COLUMN duplicado para evitar conflictos.
