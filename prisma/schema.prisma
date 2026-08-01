@@ -389,7 +389,7 @@ model medicamentos {
 model metodos_pago {
   id                                         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   botica_id                                  String    @db.Uuid
-  nombre                                     String    @unique(map: "idx_metodos_pago_nombre_activo", where: raw("(deleted_at IS NULL)")) @db.VarChar(50)
+  nombre                                     String    @db.VarChar(50)
   requiere_referencia                        Boolean   @default(false)
   created_at                                 DateTime? @default(now()) @db.Timestamptz(6)
   updated_at                                 DateTime? @default(now()) @db.Timestamptz(6)
@@ -404,6 +404,7 @@ model metodos_pago {
   usuarios_metodos_pago_updated_byTousuarios usuarios? @relation("metodos_pago_updated_byTousuarios", fields: [updated_by], references: [id], onUpdate: NoAction)
   pagos                                      pagos[]
 
+  @@unique([botica_id, nombre], map: "idx_metodos_pago_nombre_activo", where: raw("(deleted_at IS NULL)"))
   @@index([botica_id], map: "idx_metodos_pago_botica_id")
 }
 

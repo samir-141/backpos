@@ -11,7 +11,7 @@ import {
   IsArray,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class PresentacionProductoDto {
@@ -57,6 +57,7 @@ export class CreateProductoDto {
       'ID del producto comercial existente si ya existe y solo se agrega una presentación',
   })
   @IsOptional()
+  @Transform(({ value }) => value === '' ? undefined : value)
   @IsUUID()
   producto_comercial_id?: string;
 
@@ -77,21 +78,25 @@ export class CreateProductoDto {
 
   @ApiProperty({ description: 'ID del catálogo de principios activos' })
   @IsOptional()
+  @Transform(({ value }) => value === '' ? undefined : value)
   @IsUUID()
   principio_activo_id?: string;
 
   @ApiProperty({ description: 'ID del catálogo de formas farmacéuticas' })
   @IsOptional()
+  @Transform(({ value }) => value === '' ? undefined : value)
   @IsUUID()
   forma_farmaceutica_id?: string;
 
   @ApiProperty({ description: 'ID del catálogo de laboratorios' })
   @IsOptional()
+  @Transform(({ value }) => value === '' ? undefined : value)
   @IsUUID()
   laboratorio_id?: string;
 
   @ApiProperty({ description: 'ID del catálogo de categorías' })
   @IsOptional()
+  @Transform(({ value }) => value === '' ? undefined : value)
   @IsUUID()
   categoria_id?: string;
 
@@ -130,6 +135,7 @@ export class CreateProductoDto {
 
   @ApiPropertyOptional({ description: 'Unidad mínima del inventario; debe tener equivalencia 1' })
   @IsOptional()
+  @Transform(({ value }) => value === '' ? undefined : value)
   @IsUUID()
   unidad_base_id?: string;
 
