@@ -1,5 +1,6 @@
 // src/modules/diagnosticos/diagnosticos.controller.ts
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { DiscoveryService, Reflector, MetadataScanner } from '@nestjs/core';
 import { InstanceWrapper } from '@nestjs/core/injector/instance-wrapper';
@@ -10,9 +11,11 @@ import {
 } from '@nestjs/common/constants';
 
 import { EventsGateway } from '../../socket/events.gateway';
+import { PlatformAdminGuard } from '../../auth/guards/platform-admin.guard';
 
 @ApiTags('Diagnóstico')
 @Controller('diagnosticos')
+@UseGuards(AuthGuard('jwt'), PlatformAdminGuard)
 export class DiagnosticosController {
   constructor(
     private readonly discoveryService: DiscoveryService,
@@ -22,7 +25,10 @@ export class DiagnosticosController {
   ) {}
 
   @Get('usuarios-conectados')
-  @ApiOperation({ summary: 'Obtiene la lista de usuarios y sesiones conectadas en tiempo real' })
+  @ApiOperation({
+    summary:
+      'Obtiene la lista de usuarios y sesiones conectadas en tiempo real',
+  })
   obtenerUsuariosConectados() {
     const usuarios = this.eventsGateway.getUsuariosConectados();
     return {

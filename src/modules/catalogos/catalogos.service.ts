@@ -51,7 +51,10 @@ export class CatalogosService {
     const { page = 1, limit = 20, buscar, orden = 'asc' } = query;
     const offset = (page - 1) * limit;
 
-    const condiciones: string[] = ['deleted_at IS NULL', 'botica_id = $1::uuid'];
+    const condiciones: string[] = [
+      'deleted_at IS NULL',
+      'botica_id = $1::uuid',
+    ];
     const params: any[] = [boticaId];
     let paramIndex = 2;
 
@@ -99,7 +102,11 @@ export class CatalogosService {
   /**
    * Obtiene un item por ID
    */
-  async findOne(boticaId: string, tipo: string, id: string): Promise<ICatalogoItem> {
+  async findOne(
+    boticaId: string,
+    tipo: string,
+    id: string,
+  ): Promise<ICatalogoItem> {
     const tipoValido = this.validarTipo(tipo);
     const config = CATALOGOS_CONFIG[tipoValido];
 
@@ -131,7 +138,13 @@ export class CatalogosService {
     const config = CATALOGOS_CONFIG[tipoValido];
 
     // Construir campos dinámicamente según el catálogo
-    const campos: string[] = ['id', 'nombre', 'botica_id', 'created_by', 'updated_by'];
+    const campos: string[] = [
+      'id',
+      'nombre',
+      'botica_id',
+      'created_by',
+      'updated_by',
+    ];
     const valores: any[] = [
       await this.generarUuid(),
       dto.nombre,

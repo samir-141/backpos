@@ -1,175 +1,194 @@
 import {
-  WebSocketGateway,
-  WebSocketServer,
-  SubscribeMessage,
+  ConnectedSocket,
+  MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
-  MessageBody,
-  ConnectedSocket,
+  OnGatewayInit,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
 } from '@nestjs/websockets';
+import { Injectable, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
-import { Logger, Injectable } from '@nestjs/common';
+import { SocketAuthService, SocketUser } from './socket-auth.service';
+import { createCorsOptions } from '../common/config/cors.config';
 
 export interface UserConnectionInfo {
   socketId: string;
   usuarioId: string;
   nombre: string;
   rol: string;
-  sucursalId: string;
+  boticaId: string;
+  sucursalId?: string;
   connectedAt: Date;
 }
 
 @Injectable()
 @WebSocketGateway({
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST'],
-  },
+  cors: createCorsOptions(),
 })
-export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
   @WebSocketServer()
   server: Server;
 
   private readonly logger = new Logger(EventsGateway.name);
   private readonly connectedUsers = new Map<string, UserConnectionInfo>();
 
-  handleConnection(client: Socket) {
-    this.logger.log(`[Socket.IO] Cliente conectado: ${client.id}`);
-  }
+  constructor(private readonly socketAuth: SocketAuthService) {}
 
-  handleDisconnect(client: Socket) {
-    const user = this.connectedUsers.get(client.id);
-    if (user) {
-      this.logger.log(`[Socket.IO] Usuario ${user.nombre} (${user.rol}) desconectado`);
-      this.connectedUsers.delete(client.id);
-      this.emitirUsuariosConectados();
-      this.emitirGlobal('user.disconnected', {
-        usuario_id: user.usuarioId,
-        nombre: user.nombre,
-      });
-    } else {
-      this.logger.log(`[Socket.IO] Cliente desconectado: ${client.id}`);
-    }
-  }
-
-  /**
-   * Identificación del usuario y suscripción a su sala de sucursal
-   */
-  @SubscribeMessage('identify_user')
-  handleIdentifyUser(
-    @ConnectedSocket() client: Socket,
-    @MessageBody()
-    payload: {
-      usuarioId: string;
-      nombre: string;
-      rol?: string;
-      sucursalId?: string;
-    },
-  ) {
-    if (payload && payload.usuarioId) {
-      const info: UserConnectionInfo = {
-        socketId: client.id,
-        usuarioId: payload.usuarioId,
-        nombre: payload.nombre || 'Usuario POS',
-        rol: payload.rol || 'CAJERO',
-        sucursalId: payload.sucursalId || 'GLOBAL',
-        connectedAt: new Date(),
-      };
-
-      this.connectedUsers.set(client.id, info);
-
-      if (payload.sucursalId) {
-        const roomName = `sucursal_${payload.sucursalId}`;
-        client.join(roomName);
-        this.logger.log(
-          `[Socket.IO] Usuario ${info.nombre} unió a sala ${roomName}`,
-        );
+  afterInit(server: Server) {
+    server.use(async (client: Socket, next) => {
+      try {
+        await this.socketAuth.authenticate(client);
+        next();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'No autorizado';
+        next(new Error(message));
       }
+    });
+  }
 
-      this.emitirUsuariosConectados();
-      this.emitirGlobal('user.connected', {
-        usuario_id: info.usuarioId,
-        nombre: info.nombre,
-        rol: info.rol,
-        sucursal_id: info.sucursalId,
-      });
+  async handleConnection(client: Socket): Promise<void> {
+    try {
+      const user = this.socketAuth.getUser(client);
+      await client.join(`botica_${user.boticaId}`);
+      if (user.sucursalId) {
+        await this.socketAuth.assertSucursalAccess(user, user.sucursalId);
+        await client.join(`sucursal_${user.sucursalId}`);
+      }
+      this.registerConnection(client, user);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'No autorizado';
+      this.logger.warn(
+        `[Socket.IO] Conexión rechazada ${client.id}: ${message}`,
+      );
+      client.emit('auth_error', { message });
+      client.disconnect(true);
     }
   }
 
-  /**
-   * Unión manual a salas por sucursal o sesión de escáner
-   */
+  handleDisconnect(client: Socket): void {
+    const user = this.connectedUsers.get(client.id);
+    if (!user) return;
+    this.connectedUsers.delete(client.id);
+    this.emitConnectedUsers(user.boticaId);
+    this.server?.to(`botica_${user.boticaId}`).emit('user.disconnected', {
+      usuario_id: user.usuarioId,
+      nombre: user.nombre,
+    });
+  }
+
+  @SubscribeMessage('identify_user')
+  async handleIdentifyUser(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload?: { sucursalId?: string },
+  ) {
+    const user = this.socketAuth.getUser(client);
+    if (payload?.sucursalId) {
+      await this.joinSucursal(client, user, payload.sucursalId);
+    }
+    return {
+      success: true,
+      usuarioId: user.id,
+      nombre: user.nombre,
+      rol: user.rol,
+      sucursalId: payload?.sucursalId || user.sucursalId,
+    };
+  }
+
   @SubscribeMessage('join_room')
-  handleJoinRoom(
+  async handleJoinRoom(
     @ConnectedSocket() client: Socket,
     @MessageBody() roomName: string,
   ) {
-    if (roomName) {
-      client.join(roomName);
-      this.logger.log(`[Socket.IO] Cliente ${client.id} se unió a ${roomName}`);
-    }
+    const user = this.socketAuth.getUser(client);
+    const match = /^sucursal_([0-9a-f-]{36})$/i.exec(String(roomName || ''));
+    if (!match) return { success: false, error: 'Sala no autorizada' };
+    await this.joinSucursal(client, user, match[1]);
+    return { success: true, room: roomName };
   }
 
   @SubscribeMessage('join_session')
-  handleJoinSession(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() sessionCode: string,
-  ) {
-    if (sessionCode) {
-      const room = `session_${sessionCode.toUpperCase()}`;
-      client.join(room);
-      this.logger.log(`[Socket.IO] Cliente ${client.id} se unió a ${room}`);
-    }
+  handleLegacySession() {
+    return {
+      success: false,
+      error: 'Use el namespace /escanner y una sesión emitida por el servidor',
+    };
   }
 
   @SubscribeMessage('sync_cart')
-  handleSyncCart(
-    @ConnectedSocket() client: Socket,
-    @MessageBody() payload: { sessionCode: string; cart: any[] },
-  ) {
-    if (payload && payload.sessionCode) {
-      const room = `session_${payload.sessionCode.toUpperCase()}`;
-      client.to(room).emit('carrito.actualizado', payload.cart);
-      this.logger.log(`[Socket.IO] Carrito transmitido a ${room}`);
-    }
+  handleLegacyCartSync() {
+    return { success: false, error: 'Sincronización de carrito no habilitada' };
   }
 
-  /**
-   * Emite evento a todos los clientes conectados a una sucursal específica
-   */
-  emitirASucursal(sucursalId: string, evento: string, data: any) {
-    this.logger.log(`[Socket.IO Sucursal: ${sucursalId}] Evento: ${evento}`);
-    if (this.server) {
-      this.server.to(`sucursal_${sucursalId}`).emit(evento, data);
-      // También emite global por compatibilidad
-      this.server.emit(evento, data);
-    }
+  emitirASucursal(sucursalId: string, evento: string, data: any): void {
+    this.server?.to(`sucursal_${sucursalId}`).emit(evento, data);
   }
 
-  /**
-   * Emite evento a nivel global (Alias de compatibilidad)
-   */
-  emitirEvento(evento: string, data: any) {
+  emitirEvento(evento: string, data: any): void {
     this.emitirGlobal(evento, data);
   }
 
   /**
-   * Emite evento a nivel global
+   * Compatibilidad con llamadas antiguas: solo se emite cuando la carga permite
+   * identificar la sucursal. Nunca retransmite datos de tenant globalmente.
    */
-  emitirGlobal(evento: string, data: any) {
-    this.logger.log(`[Socket.IO Global] Evento: ${evento}`);
-    this.server?.emit(evento, data);
+  emitirGlobal(evento: string, data: any): void {
+    const sucursalId = data?.sucursal_id || data?.sucursalId;
+    if (!sucursalId) {
+      this.logger.warn(
+        `[Socket.IO] Evento ${evento} omitido: no contiene sucursal_id`,
+      );
+      return;
+    }
+    this.emitirASucursal(String(sucursalId), evento, data);
   }
 
-  /**
-   * Retorna la lista activa de usuarios conectados
-   */
   getUsuariosConectados(): UserConnectionInfo[] {
     return Array.from(this.connectedUsers.values());
   }
 
-  private emitirUsuariosConectados() {
-    const usuarios = this.getUsuariosConectados();
-    this.server?.emit('users.active_list', usuarios);
+  private registerConnection(client: Socket, user: SocketUser): void {
+    const info: UserConnectionInfo = {
+      socketId: client.id,
+      usuarioId: user.id,
+      nombre: user.nombre,
+      rol: user.rol,
+      boticaId: user.boticaId,
+      sucursalId: user.sucursalId,
+      connectedAt: new Date(),
+    };
+    this.connectedUsers.set(client.id, info);
+    this.emitConnectedUsers(user.boticaId);
+    this.server?.to(`botica_${user.boticaId}`).emit('user.connected', {
+      usuario_id: user.id,
+      nombre: user.nombre,
+      rol: user.rol,
+      sucursal_id: user.sucursalId,
+    });
+  }
+
+  private async joinSucursal(
+    client: Socket,
+    user: SocketUser,
+    sucursalId: string,
+  ): Promise<void> {
+    await this.socketAuth.assertSucursalAccess(user, sucursalId);
+    const salasAnteriores = Array.from(client.rooms).filter(
+      (room) =>
+        room.startsWith('sucursal_') && room !== `sucursal_${sucursalId}`,
+    );
+    await Promise.all(salasAnteriores.map((room) => client.leave(room)));
+    await client.join(`sucursal_${sucursalId}`);
+    user.sucursalId = sucursalId;
+    const info = this.connectedUsers.get(client.id);
+    if (info) info.sucursalId = sucursalId;
+  }
+
+  private emitConnectedUsers(boticaId: string): void {
+    const usuarios = this.getUsuariosConectados().filter(
+      (user) => user.boticaId === boticaId,
+    );
+    this.server?.to(`botica_${boticaId}`).emit('users.active_list', usuarios);
   }
 }

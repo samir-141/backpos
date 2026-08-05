@@ -242,7 +242,7 @@ export class ReportesService {
     };
   }
 
-  async getReporteInventario(query: QueryReportesDto) {
+  async getReporteInventario(boticaId: string, query: QueryReportesDto) {
     this.logger.log(
       `Generando reporte de inventario para sucursal: ${query.sucursal_id || 'Global'}`,
     );
@@ -254,6 +254,7 @@ export class ReportesService {
 
     const lotes = await this.prisma.lotes.findMany({
       where: {
+        botica_id: boticaId,
         deleted_at: null,
         ...(sucursalValida ? { sucursal_id: query.sucursal_id } : {}),
       },
@@ -271,6 +272,7 @@ export class ReportesService {
     );
     const totalItemsLotes = lotes.length;
     const lotesPorVencerCount = lotes.filter((l) => {
+      if (!l.fecha_vencimiento) return false;
       const diasVencimiento = Math.ceil(
         (new Date(l.fecha_vencimiento).getTime() - Date.now()) /
           (1000 * 60 * 60 * 24),
@@ -316,10 +318,12 @@ export class ReportesService {
       valor_total_lote:
         l.stock_actual * Number(l.precio_compra_unidad_base || 0),
       fecha_vencimiento: l.fecha_vencimiento,
-      dias_para_vencer: Math.ceil(
-        (new Date(l.fecha_vencimiento).getTime() - Date.now()) /
-          (1000 * 60 * 60 * 24),
-      ),
+      dias_para_vencer: l.fecha_vencimiento
+        ? Math.ceil(
+            (new Date(l.fecha_vencimiento).getTime() - Date.now()) /
+              (1000 * 60 * 60 * 24),
+          )
+        : null,
     }));
 
     return {
@@ -346,59 +350,144 @@ export class ReportesService {
       : new Date();
     const sucursalId = query.sucursal_id;
     const sucursalFilter = sucursalId ? { sucursal_id: sucursalId } : {};
-    const ventasFilter = sucursalId ? { cajas: { sucursal_id: sucursalId } } : {};
+    const ventasFilter = sucursalId
+      ? { cajas: { sucursal_id: sucursalId } }
+      : {};
 
     const [ventas, gastos, compras, lotes, sucursales] = await Promise.all([
       this.prisma.ventas.findMany({
-        where: { botica_id: boticaId, deleted_at: null, fecha: { gte: inicio, lte: fin }, ...ventasFilter },
-        include: { detalles_ventas: { include: { lotes: true, productos_presentaciones: true } }, pagos: { include: { metodos_pago: true } } },
+        where: {
+          botica_id: boticaId,
+          deleted_at: null,
+          fecha: { gte: inicio, lte: fin },
+          ...ventasFilter,
+        },
+        include: {
+          detalles_ventas: {
+            include: { lotes: true, productos_presentaciones: true },
+          },
+          pagos: { include: { metodos_pago: true } },
+        },
       }),
       this.prisma.gastos_operativos.findMany({
-        where: { botica_id: boticaId, deleted_at: null, fecha: { gte: inicio, lte: fin }, ...sucursalFilter },
-        orderBy: { fecha: 'desc' }, take: 100,
+        where: {
+          botica_id: boticaId,
+          deleted_at: null,
+          fecha: { gte: inicio, lte: fin },
+          ...sucursalFilter,
+        },
+        orderBy: { fecha: 'desc' },
+        take: 100,
       }),
       this.prisma.compras.findMany({
-        where: { botica_id: boticaId, deleted_at: null, fecha: { gte: inicio, lte: fin }, ...sucursalFilter },
+        where: {
+          botica_id: boticaId,
+          deleted_at: null,
+          fecha: { gte: inicio, lte: fin },
+          ...sucursalFilter,
+        },
         select: { total: true },
       }),
       this.prisma.lotes.findMany({
-        where: { botica_id: boticaId, deleted_at: null, stock_actual: { gt: 0 }, ...sucursalFilter },
-        select: { stock_actual: true, precio_compra_unidad_base: true, fecha_vencimiento: true, sucursal_id: true },
+        where: {
+          botica_id: boticaId,
+          deleted_at: null,
+          stock_actual: { gt: 0 },
+          ...sucursalFilter,
+        },
+        select: {
+          stock_actual: true,
+          precio_compra_unidad_base: true,
+          fecha_vencimiento: true,
+          sucursal_id: true,
+        },
       }),
-      this.prisma.sucursales.findMany({ where: { botica_id: boticaId, deleted_at: null }, select: { id: true, nombre: true } }),
+      this.prisma.sucursales.findMany({
+        where: { botica_id: boticaId, deleted_at: null },
+        select: { id: true, nombre: true },
+      }),
     ]);
 
     const ventasCobradas = ventas.reduce((a, v) => a + Number(v.total), 0);
-    const costoVentas = ventas.reduce((a, v) => a + v.detalles_ventas.reduce((c, d) =>
-      c + Number(d.costo_unitario_base ?? d.lotes?.precio_compra_unidad_base ?? 0) * d.cantidad * Number(d.productos_presentaciones?.cantidad_unidad_base || 1), 0), 0);
+    const costoVentas = ventas.reduce(
+      (a, v) =>
+        a +
+        v.detalles_ventas.reduce(
+          (c, d) =>
+            c +
+            Number(
+              d.costo_unitario_base ?? d.lotes?.precio_compra_unidad_base ?? 0,
+            ) *
+              d.cantidad *
+              Number(d.productos_presentaciones?.cantidad_unidad_base || 1),
+          0,
+        ),
+      0,
+    );
     const margenBruto = ventasCobradas - costoVentas;
-    const gastosOperativos = gastos.filter((g) => g.tipo === 'OPERATIVO').reduce((a, g) => a + Number(g.monto), 0);
-    const inversiones = gastos.filter((g) => g.tipo === 'INVERSION').reduce((a, g) => a + Number(g.monto), 0);
+    const gastosOperativos = gastos
+      .filter((g) => g.tipo === 'OPERATIVO')
+      .reduce((a, g) => a + Number(g.monto), 0);
+    const inversiones = gastos
+      .filter((g) => g.tipo === 'INVERSION')
+      .reduce((a, g) => a + Number(g.monto), 0);
     const comprasRegistradas = compras.reduce((a, c) => a + Number(c.total), 0);
-    const valorStock = lotes.reduce((a, l) => a + l.stock_actual * Number(l.precio_compra_unidad_base), 0);
-    const vencido = lotes.filter((l) => l.fecha_vencimiento < new Date()).reduce((a, l) => a + l.stock_actual * Number(l.precio_compra_unidad_base), 0);
+    const valorStock = lotes.reduce(
+      (a, l) => a + l.stock_actual * Number(l.precio_compra_unidad_base),
+      0,
+    );
+    const vencido = lotes
+      .filter(
+        (l) => l.fecha_vencimiento !== null && l.fecha_vencimiento < new Date(),
+      )
+      .reduce(
+        (a, l) => a + l.stock_actual * Number(l.precio_compra_unidad_base),
+        0,
+      );
     const pagos = new Map<string, number>();
-    ventas.forEach((v) => v.pagos.forEach((p) => {
-      const nombre = p.metodos_pago?.nombre || 'SIN MÉTODO';
-      pagos.set(nombre, (pagos.get(nombre) || 0) + Number(p.monto));
-    }));
+    ventas.forEach((v) =>
+      v.pagos.forEach((p) => {
+        const nombre = p.metodos_pago?.nombre || 'SIN MÉTODO';
+        pagos.set(nombre, (pagos.get(nombre) || 0) + Number(p.monto));
+      }),
+    );
     const sucursalesMap = new Map(sucursales.map((s) => [s.id, s.nombre]));
 
     return {
-      alcance: sucursalId ? sucursalesMap.get(sucursalId) || 'Sucursal' : 'Global (todas las sucursales)',
+      alcance: sucursalId
+        ? sucursalesMap.get(sucursalId) || 'Sucursal'
+        : 'Global (todas las sucursales)',
       periodo: { inicio, fin },
       resumen: {
-        ventas_cobradas: ventasCobradas, costo_ventas: costoVentas, margen_bruto: margenBruto,
-        gastos_operativos: gastosOperativos, inversiones, compras_registradas: comprasRegistradas,
+        ventas_cobradas: ventasCobradas,
+        costo_ventas: costoVentas,
+        margen_bruto: margenBruto,
+        gastos_operativos: gastosOperativos,
+        inversiones,
+        compras_registradas: comprasRegistradas,
         resultado_operativo: margenBruto - gastosOperativos,
-        capital_inmovilizado_stock: valorStock, capital_en_lotes_vencidos: vencido,
+        capital_inmovilizado_stock: valorStock,
+        capital_en_lotes_vencidos: vencido,
       },
-      cobros_por_metodo: Array.from(pagos, ([metodo, monto]) => ({ metodo, monto })),
-      gastos_detalle: gastos.map((g) => ({ id: g.id, fecha: g.fecha, tipo: g.tipo, categoria: g.categoria, descripcion: g.descripcion, monto: Number(g.monto), sucursal: g.sucursal_id ? sucursalesMap.get(g.sucursal_id) || 'Sucursal eliminada' : 'Global' })),
+      cobros_por_metodo: Array.from(pagos, ([metodo, monto]) => ({
+        metodo,
+        monto,
+      })),
+      gastos_detalle: gastos.map((g) => ({
+        id: g.id,
+        fecha: g.fecha,
+        tipo: g.tipo,
+        categoria: g.categoria,
+        descripcion: g.descripcion,
+        monto: Number(g.monto),
+        sucursal: g.sucursal_id
+          ? sucursalesMap.get(g.sucursal_id) || 'Sucursal eliminada'
+          : 'Global',
+      })),
     };
   }
 
-  async generarLibroVentasPLE(query: QueryReportesDto) {
+  async generarLibroVentasPLE(boticaId: string, query: QueryReportesDto) {
     this.logger.log(
       `Generando Libro de Ventas PLE 14.1 SUNAT para la sucursal: ${query.sucursal_id || 'Global'}`,
     );
@@ -410,6 +499,7 @@ export class ReportesService {
 
     const ventas = await this.prisma.ventas.findMany({
       where: {
+        botica_id: boticaId,
         deleted_at: null,
         ...(sucursalValida
           ? { cajas: { sucursal_id: query.sucursal_id } }

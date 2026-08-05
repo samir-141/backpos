@@ -40,7 +40,9 @@ export class CreateUsuarioDto {
   @IsString()
   estado?: string;
 
-  @ApiPropertyOptional({ description: 'Sucursal principal donde operará el usuario' })
+  @ApiPropertyOptional({
+    description: 'Sucursal principal donde operará el usuario',
+  })
   @IsOptional()
   @IsUUID()
   sucursal_id?: string;

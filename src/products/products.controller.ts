@@ -7,11 +7,15 @@ import {
   Param,
   Delete,
 } from '@nestjs/common';
+import { UseGuards } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { PlatformAdminGuard } from '../auth/guards/platform-admin.guard';
 
 @Controller('products')
+@UseGuards(AuthGuard('jwt'), PlatformAdminGuard)
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 

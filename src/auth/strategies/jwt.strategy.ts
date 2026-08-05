@@ -13,7 +13,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   ) {
     const secret = configService.get<string>('JWT_SECRET');
     if (!secret) {
-      throw new Error('JWT_SECRET no está definido. Configúralo en el entorno (ver .env.example).');
+      throw new Error(
+        'JWT_SECRET no está definido. Configúralo en el entorno (ver .env.example).',
+      );
     }
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -28,7 +30,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       include: { roles: true },
     });
 
-    if (!usuario || usuario.estado !== 'ACTIVO') {
+    if (!usuario || usuario.deleted_at || usuario.estado !== 'ACTIVO') {
       throw new UnauthorizedException('Usuario no autorizado');
     }
 
@@ -39,6 +41,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       rol: usuario.roles?.nombre || 'SIN_ROL',
       botica_id: usuario.botica_id,
       sucursal_id: payload.sucursal_id,
+      es_super_admin: usuario.es_super_admin,
     };
   }
 }

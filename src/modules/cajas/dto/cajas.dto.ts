@@ -1,4 +1,9 @@
-import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+
+export enum TipoMovimientoCaja {
+  INGRESO = 'INGRESO',
+  EGRESO = 'EGRESO',
+}
 
 export class AperturaCajaDto {
   @IsNumber({}, { message: 'El monto inicial debe ser un número válido' })
@@ -29,8 +34,10 @@ export class CierreCajaDto {
 }
 
 export class MovimientoCajaDto {
-  @IsString()
-  tipo: 'INGRESO' | 'EGRESO';
+  @IsEnum(TipoMovimientoCaja, {
+    message: 'El tipo de movimiento debe ser INGRESO o EGRESO',
+  })
+  tipo: TipoMovimientoCaja;
 
   @IsNumber({}, { message: 'El monto debe ser un número válido' })
   @Min(0.1, { message: 'El monto debe ser mayor a 0' })

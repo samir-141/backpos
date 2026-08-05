@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
 } from '@nestjs/common';
@@ -9,8 +10,13 @@ import {
   CierreCajaDto,
   MovimientoCajaDto,
 } from './dto/cajas.dto';
-
 import { RealtimeService } from '../../socket/realtime.service';
+
+interface CajaContext {
+  boticaId: string;
+  usuarioId: string;
+  sucursalId: string;
+}
 
 @Injectable()
 export class CajasService {
@@ -21,102 +27,96 @@ export class CajasService {
     private readonly realtimeService: RealtimeService,
   ) {}
 
-  /**
-   * Resuelve un ID de usuario válido existente en la BD (fallback al primer usuario activo)
-   */
-  private async resolveUsuarioId(boticaId: string, usuarioId?: string): Promise<string> {
-    if (usuarioId && usuarioId !== '00000000-0000-0000-0000-000000000000') {
-      const u = await this.prisma.usuarios.findFirst({
-        where: { id: usuarioId, botica_id: boticaId, deleted_at: null },
-      });
-      if (u) return u.id;
+  private async resolveContext(
+    boticaId: string,
+    usuarioId?: string,
+    sucursalId?: string,
+  ): Promise<CajaContext> {
+    if (!usuarioId) {
+      throw new ForbiddenException(
+        'No se pudo identificar al usuario autenticado.',
+      );
     }
-
-    const primerUsuario = await this.prisma.usuarios.findFirst({
-      where: { botica_id: boticaId, deleted_at: null },
+    const usuario = await this.prisma.usuarios.findFirst({
+      where: {
+        id: usuarioId,
+        botica_id: boticaId,
+        estado: 'ACTIVO',
+        deleted_at: null,
+      },
+      select: { id: true },
     });
-
-    if (!primerUsuario) {
-      throw new BadRequestException(
-        'No existe ningún usuario activo registrado en el sistema.',
+    if (!usuario) {
+      throw new ForbiddenException(
+        'El usuario no está activo en la botica actual.',
       );
     }
 
-    return primerUsuario.id;
+    const asignacion = await this.prisma.usuario_sucursales.findFirst({
+      where: {
+        usuario_id: usuarioId,
+        botica_id: boticaId,
+        activo: true,
+        ...(sucursalId ? { sucursal_id: sucursalId } : {}),
+        sucursales: { botica_id: boticaId, deleted_at: null },
+      },
+      orderBy: [{ es_principal: 'desc' }, { created_at: 'asc' }],
+      select: { sucursal_id: true },
+    });
+    if (!asignacion) {
+      throw new ForbiddenException(
+        sucursalId
+          ? 'La sucursal no está asignada al usuario autenticado.'
+          : 'El usuario no tiene una sucursal activa asignada.',
+      );
+    }
+    return { boticaId, usuarioId, sucursalId: asignacion.sucursal_id };
   }
 
-  /**
-   * Resuelve un ID de sucursal válido existente en la BD (fallback a la primera sucursal activa)
-   */
-  private async resolveSucursalId(
-    boticaId: string,
-    sucursalId?: string,
-  ): Promise<string> {
-    if (sucursalId) {
-      const s = await this.prisma.sucursales.findFirst({
-        where: { id: sucursalId, botica_id: boticaId, deleted_at: null },
-      });
-      if (s) return s.id;
-    }
+  private async lockSucursal(tx: any, context: CajaContext): Promise<void> {
+    await tx.$executeRawUnsafe(
+      'SELECT pg_advisory_xact_lock(hashtext($1))',
+      `caja:${context.boticaId}:${context.sucursalId}`,
+    );
+  }
 
-    const primeraSucursal = await this.prisma.sucursales.findFirst({
-      where: { botica_id: boticaId, deleted_at: null },
+  private async getOrCreateCaja(tx: any, context: CajaContext) {
+    let caja = await tx.cajas.findFirst({
+      where: {
+        sucursal_id: context.sucursalId,
+        botica_id: context.boticaId,
+        deleted_at: null,
+      },
       orderBy: { created_at: 'asc' },
     });
+    if (caja) return caja;
 
-    if (!primeraSucursal) {
-      throw new BadRequestException(
-        'No existe ninguna sucursal vigente para la botica actual. Crea una sucursal antes de operar cajas.',
+    const sucursal = await tx.sucursales.findFirst({
+      where: {
+        id: context.sucursalId,
+        botica_id: context.boticaId,
+        deleted_at: null,
+      },
+      select: { nombre: true },
+    });
+    if (!sucursal) {
+      throw new ForbiddenException(
+        'La sucursal asignada ya no está disponible.',
       );
     }
-
-    return primeraSucursal.id;
-  }
-
-  /**
-   * Obtiene o crea la caja de la sucursal asegurando IDs válidos de Foreign Keys
-   */
-  private async getOrCreateCaja(sucursalIdReq?: string, usuarioIdReq?: string, boticaId?: string) {
-    if (!boticaId) {
-      throw new BadRequestException('No se pudo determinar la botica del usuario.');
-    }
-
-    const sucursalId = await this.resolveSucursalId(boticaId, sucursalIdReq);
-    const usuarioId = await this.resolveUsuarioId(boticaId, usuarioIdReq);
-
-    let caja = await this.prisma.cajas.findFirst({
-      where: { sucursal_id: sucursalId, botica_id: boticaId, deleted_at: null },
+    caja = await tx.cajas.create({
+      data: {
+        sucursal_id: context.sucursalId,
+        botica_id: context.boticaId,
+        nombre: `Caja Principal - ${sucursal.nombre}`,
+        estado: 'CERRADA',
+        created_by: context.usuarioId,
+      },
     });
-
-    if (!caja) {
-      const sucursal = await this.prisma.sucursales.findUnique({
-        where: { id: sucursalId },
-      });
-
-      caja = await this.prisma.cajas.create({
-        data: {
-          sucursal_id: sucursalId,
-          botica_id: boticaId,
-          nombre: `Caja Principal - ${sucursal?.nombre || 'POS'}`,
-          estado: 'CERRADA',
-          created_by: usuarioId,
-        },
-      });
-    }
-
-    return { caja, usuarioId, sucursalId };
+    return caja;
   }
 
-  /**
-   * Obtiene el estado actual de la caja y sus métricas del turno
-   */
-  async getEstadoCaja(boticaId: string, usuarioIdReq?: string, sucursalIdReq?: string) {
-    const { caja, usuarioId, sucursalId } = await this.getOrCreateCaja(
-      sucursalIdReq,
-      usuarioIdReq,
-      boticaId,
-    );
-
+  private async buildEstado(tx: any, caja: any) {
     if (caja.estado === 'CERRADA') {
       return {
         caja_id: caja.id,
@@ -134,150 +134,133 @@ export class CajasService {
       };
     }
 
-    // Obtener el último movimiento de APERTURA para delimitar el turno actual
-    const ultimaApertura = await this.prisma.movimientos_caja.findFirst({
-      where: {
-        caja_id: caja.id,
-        tipo: 'APERTURA',
-        deleted_at: null,
-      },
+    const ultimaApertura = await tx.movimientos_caja.findFirst({
+      where: { caja_id: caja.id, tipo: 'APERTURA', deleted_at: null },
       orderBy: { fecha: 'desc' },
     });
-
     const fechaApertura = ultimaApertura?.fecha || new Date();
     const montoInicial = Number(ultimaApertura?.monto || 0);
-
-    // Movimientos manuales en el turno actual (INGRESO / EGRESO)
-    const movimientosTurno = await this.prisma.movimientos_caja.findMany({
-      where: {
-        caja_id: caja.id,
-        fecha: { gte: fechaApertura },
-        deleted_at: null,
-      },
-    });
+    const [movimientos, ventas] = await Promise.all([
+      tx.movimientos_caja.findMany({
+        where: {
+          caja_id: caja.id,
+          fecha: { gte: fechaApertura },
+          deleted_at: null,
+        },
+      }),
+      tx.ventas.findMany({
+        where: {
+          caja_id: caja.id,
+          fecha: { gte: fechaApertura },
+          deleted_at: null,
+        },
+        include: { pagos: { include: { metodos_pago: true } } },
+      }),
+    ]);
 
     let ingresosManuales = 0;
     let egresosManuales = 0;
-
-    movimientosTurno.forEach((m) => {
-      if (m.tipo === 'INGRESO') ingresosManuales += Number(m.monto);
-      if (m.tipo === 'EGRESO') egresosManuales += Number(m.monto);
-    });
-
-    // Ventas registradas desde la apertura del turno
-    const ventasTurno = await this.prisma.ventas.findMany({
-      where: {
-        caja_id: caja.id,
-        fecha: { gte: fechaApertura },
-        deleted_at: null,
-      },
-      include: {
-        pagos: {
-          include: { metodos_pago: true },
-        },
-      },
-    });
+    for (const movimiento of movimientos) {
+      if (movimiento.tipo === 'INGRESO')
+        ingresosManuales += Number(movimiento.monto);
+      if (movimiento.tipo === 'EGRESO')
+        egresosManuales += Number(movimiento.monto);
+    }
 
     let ventasEfectivo = 0;
     let ventasDigitales = 0;
-    const metodosMap = new Map<string, number>();
-
-    ventasTurno.forEach((v) => {
-      v.pagos.forEach((p) => {
-        const metodoNombre = (p.metodos_pago?.nombre || 'EFECTIVO').toUpperCase();
-        const montoPago = Number(p.monto);
-
-        metodosMap.set(
-          metodoNombre,
-          (metodosMap.get(metodoNombre) || 0) + montoPago,
-        );
-
-        if (metodoNombre.includes('EFECTIVO')) {
-          ventasEfectivo += montoPago;
-        } else {
-          ventasDigitales += montoPago;
-        }
-      });
-    });
-
-    const desgloseMetodos = Array.from(metodosMap.entries()).map(
-      ([metodo, monto]) => ({
-        metodo,
-        monto,
-      }),
-    );
-
-    const efectivoEsperado =
-      montoInicial + ventasEfectivo + ingresosManuales - egresosManuales;
+    const metodos = new Map<string, number>();
+    for (const venta of ventas) {
+      for (const pago of venta.pagos) {
+        const nombre = (pago.metodos_pago?.nombre || 'EFECTIVO').toUpperCase();
+        const monto = Number(pago.monto);
+        metodos.set(nombre, (metodos.get(nombre) || 0) + monto);
+        if (nombre.includes('EFECTIVO')) ventasEfectivo += monto;
+        else ventasDigitales += monto;
+      }
+    }
 
     return {
       caja_id: caja.id,
       nombre: caja.nombre,
       estado: 'ABIERTA',
       monto_inicial: montoInicial,
-      efectivo_esperado: efectivoEsperado,
+      efectivo_esperado:
+        montoInicial + ventasEfectivo + ingresosManuales - egresosManuales,
       ventas_efectivo: ventasEfectivo,
       ventas_digitales: ventasDigitales,
-      desglose_metodos: desgloseMetodos,
+      desglose_metodos: Array.from(metodos, ([metodo, monto]) => ({
+        metodo,
+        monto,
+      })),
       ingresos_manuales: ingresosManuales,
       egresos_manuales: egresosManuales,
-      operaciones_count: ventasTurno.length,
+      operaciones_count: ventas.length,
       fecha_apertura: fechaApertura.toISOString(),
     };
   }
 
-  /**
-   * Apertura de caja con monto inicial (sencillo)
-   */
+  async getEstadoCaja(
+    boticaId: string,
+    usuarioId?: string,
+    sucursalId?: string,
+  ) {
+    const context = await this.resolveContext(boticaId, usuarioId, sucursalId);
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockSucursal(tx, context);
+      const caja = await this.getOrCreateCaja(tx, context);
+      return this.buildEstado(tx, caja);
+    });
+  }
+
   async aperturarCaja(
     boticaId: string,
-    usuarioIdReq?: string,
-    sucursalIdReq?: string,
+    usuarioId?: string,
+    sucursalId?: string,
     dto?: AperturaCajaDto,
   ) {
-    const sucursalTarget = dto?.sucursal_id || sucursalIdReq;
-    const { caja, usuarioId } = await this.getOrCreateCaja(
-      sucursalTarget,
-      usuarioIdReq,
+    const context = await this.resolveContext(
       boticaId,
-    );
-
-    if (caja.estado === 'ABIERTA') {
-      throw new BadRequestException('La caja ya se encuentra ABIERTA.');
-    }
-
-    const montoInicial = dto?.monto_inicial ?? 0;
-
-    // Actualizar estado a ABIERTA
-    await this.prisma.cajas.update({
-      where: { id: caja.id },
-      data: {
-        estado: 'ABIERTA',
-        updated_by: usuarioId,
-      },
-    });
-
-    // Registrar movimiento de apertura con usuarioId garantizado en la BD
-    await this.prisma.movimientos_caja.create({
-      data: {
-        caja_id: caja.id,
-        botica_id: boticaId,
-        usuario_id: usuarioId,
-        tipo: 'APERTURA',
-        monto: montoInicial,
-        observacion: dto?.observacion || 'Apertura de turno',
-        created_by: usuarioId,
-      },
-    });
-
-    // Realtime broadcast
-    this.realtimeService.notificarCajaAperturada(
-      caja.sucursal_id,
-      caja.id,
       usuarioId,
+      dto?.sucursal_id || sucursalId,
+    );
+    const montoInicial = dto?.monto_inicial ?? 0;
+    const caja = await this.prisma.$transaction(async (tx) => {
+      await this.lockSucursal(tx, context);
+      const actual = await this.getOrCreateCaja(tx, context);
+      const transition = await tx.cajas.updateMany({
+        where: {
+          id: actual.id,
+          botica_id: boticaId,
+          sucursal_id: context.sucursalId,
+          estado: 'CERRADA',
+          deleted_at: null,
+        },
+        data: { estado: 'ABIERTA', updated_by: context.usuarioId },
+      });
+      if (transition.count !== 1) {
+        throw new BadRequestException('La caja ya se encuentra ABIERTA.');
+      }
+      await tx.movimientos_caja.create({
+        data: {
+          caja_id: actual.id,
+          botica_id: boticaId,
+          usuario_id: context.usuarioId,
+          tipo: 'APERTURA',
+          monto: montoInicial,
+          observacion: dto?.observacion || 'Apertura de turno',
+          created_by: context.usuarioId,
+        },
+      });
+      return actual;
+    });
+
+    this.realtimeService.notificarCajaAperturada(
+      context.sucursalId,
+      caja.id,
+      context.usuarioId,
       montoInicial,
     );
-
     return {
       mensaje: 'Caja aperturada exitosamente',
       caja_id: caja.id,
@@ -285,134 +268,125 @@ export class CajasService {
     };
   }
 
-  /**
-   * Registrar movimiento manual (INGRESO / EGRESO)
-   */
   async registrarMovimiento(
     boticaId: string,
-    usuarioIdReq?: string,
-    sucursalIdReq?: string,
+    usuarioId?: string,
+    sucursalId?: string,
     dto?: MovimientoCajaDto,
   ) {
     if (!dto) throw new BadRequestException('Datos de movimiento requeridos.');
-
-    const sucursalTarget = dto.sucursal_id || sucursalIdReq;
-    const { caja, usuarioId } = await this.getOrCreateCaja(
-      sucursalTarget,
-      usuarioIdReq,
+    const context = await this.resolveContext(
       boticaId,
+      usuarioId,
+      dto.sucursal_id || sucursalId,
     );
-
-    if (caja.estado !== 'ABIERTA') {
-      throw new BadRequestException(
-        'Debes aperturar la caja para registrar movimientos.',
-      );
-    }
-
-    const movimiento = await this.prisma.movimientos_caja.create({
-      data: {
-        caja_id: caja.id,
-        botica_id: boticaId,
-        usuario_id: usuarioId,
-        tipo: dto.tipo,
-        monto: dto.monto,
-        observacion: dto.observacion,
-        created_by: usuarioId,
-      },
+    const movimiento = await this.prisma.$transaction(async (tx) => {
+      await this.lockSucursal(tx, context);
+      const caja = await this.getOrCreateCaja(tx, context);
+      const abierta = await tx.cajas.count({
+        where: { id: caja.id, estado: 'ABIERTA', deleted_at: null },
+      });
+      if (abierta !== 1) {
+        throw new BadRequestException(
+          'Debes aperturar la caja para registrar movimientos.',
+        );
+      }
+      return tx.movimientos_caja.create({
+        data: {
+          caja_id: caja.id,
+          botica_id: boticaId,
+          usuario_id: context.usuarioId,
+          tipo: dto.tipo,
+          monto: dto.monto,
+          observacion: dto.observacion,
+          created_by: context.usuarioId,
+        },
+      });
     });
-
     return {
       mensaje: `Movimiento de ${dto.tipo} registrado correctamente`,
       movimiento,
     };
   }
 
-  /**
-   * Arqueo y Cierre de Caja (Corte Z)
-   */
   async cerrarCaja(
     boticaId: string,
-    usuarioIdReq?: string,
-    sucursalIdReq?: string,
+    usuarioId?: string,
+    sucursalId?: string,
     dto?: CierreCajaDto,
   ) {
-    const sucursalTarget = dto?.sucursal_id || sucursalIdReq;
-    const { caja, usuarioId } = await this.getOrCreateCaja(
-      sucursalTarget,
-      usuarioIdReq,
-      boticaId,
-    );
-
-    if (caja.estado !== 'ABIERTA') {
-      throw new BadRequestException('La caja ya se encuentra CERRADA.');
-    }
-
-    const estadoAntes = await this.getEstadoCaja(
+    const context = await this.resolveContext(
       boticaId,
       usuarioId,
-      caja.sucursal_id,
+      dto?.sucursal_id || sucursalId,
     );
-    const efectivoEsperado = estadoAntes.efectivo_esperado;
     const efectivoContado = dto?.efectivo_contado ?? 0;
-    const diferencia = efectivoContado - efectivoEsperado;
+    const cierre = await this.prisma.$transaction(async (tx) => {
+      await this.lockSucursal(tx, context);
+      const caja = await this.getOrCreateCaja(tx, context);
+      if (caja.estado !== 'ABIERTA') {
+        throw new BadRequestException('La caja ya se encuentra CERRADA.');
+      }
+      const estado = await this.buildEstado(tx, caja);
+      const transition = await tx.cajas.updateMany({
+        where: {
+          id: caja.id,
+          botica_id: boticaId,
+          sucursal_id: context.sucursalId,
+          estado: 'ABIERTA',
+          deleted_at: null,
+        },
+        data: { estado: 'CERRADA', updated_by: context.usuarioId },
+      });
+      if (transition.count !== 1) {
+        throw new BadRequestException('La caja ya se encuentra CERRADA.');
+      }
 
-    let tipoDiferencia = 'EXACTO';
-    if (diferencia > 0) tipoDiferencia = 'SOBRANTE';
-    if (diferencia < 0) tipoDiferencia = 'FALTANTE';
-
-    const observacionCierre = `${dto?.observacion || 'Cierre de turno (Corte Z)'} | [${tipoDiferencia}: S/ ${Math.abs(diferencia).toFixed(2)}]`;
-
-    // Registrar movimiento de cierre
-    await this.prisma.movimientos_caja.create({
-      data: {
-        caja_id: caja.id,
-        botica_id: boticaId,
-        usuario_id: usuarioId,
-        tipo: 'CIERRE',
-        monto: efectivoContado,
-        observacion: observacionCierre,
-        created_by: usuarioId,
-      },
+      const diferencia = efectivoContado - estado.efectivo_esperado;
+      const tipoDiferencia =
+        diferencia > 0 ? 'SOBRANTE' : diferencia < 0 ? 'FALTANTE' : 'EXACTO';
+      await tx.movimientos_caja.create({
+        data: {
+          caja_id: caja.id,
+          botica_id: boticaId,
+          usuario_id: context.usuarioId,
+          tipo: 'CIERRE',
+          monto: efectivoContado,
+          observacion: `${dto?.observacion || 'Cierre de turno (Corte Z)'} | [${tipoDiferencia}: S/ ${Math.abs(diferencia).toFixed(2)}]`,
+          created_by: context.usuarioId,
+        },
+      });
+      return {
+        caja,
+        resumen: {
+          caja_id: caja.id,
+          nombre_caja: caja.nombre,
+          fecha_cierre: new Date().toISOString(),
+          fecha_apertura: estado.fecha_apertura,
+          monto_inicial: estado.monto_inicial,
+          ventas_efectivo: estado.ventas_efectivo,
+          ventas_digitales: estado.ventas_digitales,
+          desglose_metodos: estado.desglose_metodos,
+          ingresos_manuales: estado.ingresos_manuales,
+          egresos_manuales: estado.egresos_manuales,
+          efectivo_esperado: estado.efectivo_esperado,
+          efectivo_contado: efectivoContado,
+          diferencia,
+          tipo_diferencia: tipoDiferencia,
+          operaciones_count: estado.operaciones_count,
+          observacion: dto?.observacion || 'Ninguna',
+        },
+      };
     });
 
-    // Actualizar estado a CERRADA
-    await this.prisma.cajas.update({
-      where: { id: caja.id },
-      data: {
-        estado: 'CERRADA',
-        updated_by: usuarioId,
-      },
-    });
-
-    const resumenFinal = {
-      caja_id: caja.id,
-      nombre_caja: caja.nombre,
-      fecha_cierre: new Date().toISOString(),
-      fecha_apertura: estadoAntes.fecha_apertura,
-      monto_inicial: estadoAntes.monto_inicial,
-      ventas_efectivo: estadoAntes.ventas_efectivo,
-      ventas_digitales: estadoAntes.ventas_digitales,
-      desglose_metodos: estadoAntes.desglose_metodos,
-      ingresos_manuales: estadoAntes.ingresos_manuales,
-      egresos_manuales: estadoAntes.egresos_manuales,
-      efectivo_esperado: efectivoEsperado,
-      efectivo_contado: efectivoContado,
-      diferencia: diferencia,
-      tipo_diferencia: tipoDiferencia,
-      operaciones_count: estadoAntes.operaciones_count,
-      observacion: dto?.observacion || 'Ninguna',
-    };
-
-    // Realtime broadcast
     this.realtimeService.notificarCajaCerrada(
-      caja.sucursal_id,
-      caja.id,
-      resumenFinal,
+      context.sucursalId,
+      cierre.caja.id,
+      cierre.resumen,
     );
-
     return {
       mensaje: 'Caja cerrada exitosamente (Corte Z)',
-      resumen_cierre: resumenFinal,
+      resumen_cierre: cierre.resumen,
     };
   }
 }

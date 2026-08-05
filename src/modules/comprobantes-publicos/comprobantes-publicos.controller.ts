@@ -12,5 +12,7 @@ export class ComprobantesPublicosController {
     return this.service.obtenerPorVenta(ventaId, req.botica_id);
   }
 
-  @Get(':token') obtener(@Param('token') token: string) { return this.service.obtener(token); }
+  @Get(':token') obtener(@Param('token') token: string) {
+    return this.service.obtener(token);
+  }
 }

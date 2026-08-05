@@ -1,6 +1,5 @@
 -- El listado y las presentaciones solo pueden mostrar stock vendible.
 -- Los lotes vencidos se conservan para auditoría, pero no se suman al disponible.
-DROP VIEW IF EXISTS public.vw_productos_pos CASCADE;
 CREATE OR REPLACE VIEW public.vw_productos_pos AS
 SELECT
     pc.id AS producto_comercial_id, pp.id AS presentacion_id, pc.botica_id,

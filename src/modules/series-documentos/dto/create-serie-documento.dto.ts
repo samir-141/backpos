@@ -1,9 +1,20 @@
 import { Type, Transform } from 'class-transformer';
-import { IsBoolean, IsIn, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateSerieDocumentoDto {
-  @ApiProperty({ example: 'BOLETA', enum: ['BOLETA', 'FACTURA', 'NOTA_VENTA', 'GUIA_REMISION'] })
+  @ApiProperty({
+    example: 'BOLETA',
+    enum: ['BOLETA', 'FACTURA', 'NOTA_VENTA', 'GUIA_REMISION'],
+  })
   @IsIn(['BOLETA', 'FACTURA', 'NOTA_VENTA', 'GUIA_REMISION'])
   tipo_documento: string;
 
@@ -34,7 +45,7 @@ export class CreateSerieDocumentoDto {
 
   @ApiProperty({ example: 'uuid-of-sucursal', required: false })
   @IsOptional()
-  @Transform(({ value }) => value === '' ? undefined : value)
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsUUID()
   sucursal_id?: string;
 

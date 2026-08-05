@@ -19,10 +19,21 @@ import {
   MovimientoCajaDto,
 } from './dto/cajas.dto';
 import { TenantGuard } from '../../auth/guards/tenant.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+
+const ROLES_CAJA = [
+  'ADMINISTRADOR',
+  'GERENTE',
+  'FARMACÉUTICO',
+  'CAJERO',
+  'VENDEDOR',
+];
 
 @ApiTags('Cajas & Turnos')
 @Controller('cajas')
-@UseGuards(AuthGuard('jwt'), TenantGuard)
+@UseGuards(AuthGuard('jwt'), TenantGuard, RolesGuard)
+@Roles(...ROLES_CAJA)
 export class CajasController {
   constructor(private readonly cajasService: CajasService) {}
 
@@ -37,7 +48,11 @@ export class CajasController {
     @Query('sucursal_id') querySucursalId?: string,
   ) {
     const sucursalId = headerSucursalId || querySucursalId || '';
-    return this.cajasService.getEstadoCaja(req.botica_id, req.user.id, sucursalId);
+    return this.cajasService.getEstadoCaja(
+      req.botica_id,
+      req.user.id,
+      sucursalId,
+    );
   }
 
   @Post('aperturar')
@@ -51,7 +66,12 @@ export class CajasController {
     @Headers('x-sucursal-id') sucursalIdHeader?: string,
   ) {
     const sucursalId = dto.sucursal_id || sucursalIdHeader || '';
-    return this.cajasService.aperturarCaja(req.botica_id, req.user.id, sucursalId, dto);
+    return this.cajasService.aperturarCaja(
+      req.botica_id,
+      req.user.id,
+      sucursalId,
+      dto,
+    );
   }
 
   @Post('movimiento')
@@ -65,7 +85,12 @@ export class CajasController {
     @Headers('x-sucursal-id') sucursalIdHeader?: string,
   ) {
     const sucursalId = dto.sucursal_id || sucursalIdHeader || '';
-    return this.cajasService.registrarMovimiento(req.botica_id, req.user.id, sucursalId, dto);
+    return this.cajasService.registrarMovimiento(
+      req.botica_id,
+      req.user.id,
+      sucursalId,
+      dto,
+    );
   }
 
   @Post('cerrar')
@@ -80,6 +105,11 @@ export class CajasController {
     @Headers('x-sucursal-id') sucursalIdHeader?: string,
   ) {
     const sucursalId = dto.sucursal_id || sucursalIdHeader || '';
-    return this.cajasService.cerrarCaja(req.botica_id, req.user.id, sucursalId, dto);
+    return this.cajasService.cerrarCaja(
+      req.botica_id,
+      req.user.id,
+      sucursalId,
+      dto,
+    );
   }
 }

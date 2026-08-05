@@ -42,7 +42,7 @@ describe('PosventaController', () => {
 
   describe('createDevolucion', () => {
     it('debería llamar al servicio para crear devolución', async () => {
-      const dto = {
+      const dto: Parameters<PosventaController['createDevolucion']>[0] = {
         venta_id: 'venta-1',
         motivo: 'Producto defectuoso',
         items: [{ detalle_venta_id: 'detalle-1', cantidad: 1 }],
@@ -61,7 +61,7 @@ describe('PosventaController', () => {
 
   describe('createCambio', () => {
     it('debería llamar al servicio para crear cambio', async () => {
-      const dto = {
+      const dto: Parameters<PosventaController['createCambio']>[0] = {
         venta_id: 'venta-1',
         motivo: 'Cliente quiere otro producto',
         items_devolver: [{ detalle_venta_id: 'detalle-1', cantidad: 1 }],
@@ -83,7 +83,7 @@ describe('PosventaController', () => {
 
   describe('createGarantia', () => {
     it('debería llamar al servicio para crear garantía', async () => {
-      const dto = {
+      const dto: Parameters<PosventaController['createGarantia']>[0] = {
         venta_id: 'venta-1',
         detalle_venta_id: 'detalle-1',
         tipo: 'CAMBIO',
@@ -103,7 +103,7 @@ describe('PosventaController', () => {
 
   describe('createReclamo', () => {
     it('debería llamar al servicio para crear reclamo', async () => {
-      const dto = {
+      const dto: Parameters<PosventaController['createReclamo']>[0] = {
         venta_id: 'venta-1',
         tipo: 'PRODUCTO',
         descripcion: 'Producto en mal estado',

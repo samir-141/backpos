@@ -27,7 +27,7 @@ export class MedicamentoResponse {
 export class LaboratorioResponse {
   @ApiProperty() id: string;
   @ApiProperty() nombre: string;
-  @ApiProperty({ required: false }) pais?: string;
+  @ApiProperty({ required: false, nullable: true }) pais?: string | null;
 }
 
 export class CategoriaResponse {
@@ -53,6 +53,7 @@ export class PresentacionResponse {
 export class LoteProductoResponse {
   @ApiProperty() id: string;
   @ApiProperty() numero_lote: string;
+  @ApiProperty({ required: false }) fecha_fabricacion: Date | null;
   @ApiProperty({ required: false }) fecha_vencimiento: Date | null;
   @ApiProperty({ required: false }) fecha_ingreso?: Date | null;
   @ApiProperty() stock_actual: number;
@@ -66,13 +67,15 @@ export class ProductoDetalleResponse {
   @ApiProperty() registro_sanitario: string | null;
   @ApiProperty() codigo_interno: string | null;
   @ApiProperty() estado: string;
-  @ApiProperty() created_at: Date;
+  @ApiProperty({ required: false, nullable: true }) created_at: Date | null;
   @ApiProperty() tipo_producto: string;
   @ApiProperty() controla_lote: boolean;
   @ApiProperty() requiere_vencimiento: boolean;
-  @ApiProperty({ required: false }) atributos?: Record<string, string> | null;
-  @ApiProperty({ type: MedicamentoResponse, required: false }) medicamento: MedicamentoResponse | null;
-  @ApiProperty({ type: LaboratorioResponse, required: false }) laboratorio: LaboratorioResponse | null;
+  @ApiProperty({ required: false, nullable: true }) atributos?: unknown;
+  @ApiProperty({ type: MedicamentoResponse, required: false })
+  medicamento: MedicamentoResponse | null;
+  @ApiProperty({ type: LaboratorioResponse, required: false })
+  laboratorio: LaboratorioResponse | null;
   @ApiProperty({ type: CategoriaResponse }) categoria: CategoriaResponse;
   @ApiProperty({ type: UnidadResponse }) unidad_base: UnidadResponse;
   @ApiProperty({ type: [PresentacionResponse] })

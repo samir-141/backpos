@@ -39,8 +39,12 @@ export class UsuariosService {
       rol_id: u.rol_id,
       rol_nombre: u.roles?.nombre || 'Sin Rol',
       botica_nombre: u.boticas?.nombre || 'Botica',
-      sucursal_id: u.usuario_sucursales_usuario_sucursales_usuario_idTousuarios?.sucursal_id || null,
-      sucursal_nombre: u.usuario_sucursales_usuario_sucursales_usuario_idTousuarios?.sucursales?.nombre || 'Sin asignar',
+      sucursal_id:
+        u.usuario_sucursales_usuario_sucursales_usuario_idTousuarios
+          ?.sucursal_id || null,
+      sucursal_nombre:
+        u.usuario_sucursales_usuario_sucursales_usuario_idTousuarios?.sucursales
+          ?.nombre || 'Sin asignar',
       created_at: u.created_at,
     }));
   }
@@ -72,7 +76,11 @@ export class UsuariosService {
     this.logger.log(`Creando nuevo usuario: ${dto.correo}`);
 
     const existente = await this.prisma.usuarios.findFirst({
-      where: { correo: dto.correo.trim().toLowerCase(), deleted_at: null, botica_id: boticaId },
+      where: {
+        correo: dto.correo.trim().toLowerCase(),
+        deleted_at: null,
+        botica_id: boticaId,
+      },
     });
 
     if (existente) {
@@ -84,23 +92,36 @@ export class UsuariosService {
     const password_hash = await bcrypt.hash(dto.password, 10);
 
     if (dto.sucursal_id) {
-      const sucursal = await this.prisma.sucursales.findFirst({ where: { id: dto.sucursal_id, botica_id: boticaId, deleted_at: null } });
-      if (!sucursal) throw new BadRequestException('La sucursal seleccionada no pertenece a esta botica.');
+      const sucursal = await this.prisma.sucursales.findFirst({
+        where: { id: dto.sucursal_id, botica_id: boticaId, deleted_at: null },
+      });
+      if (!sucursal)
+        throw new BadRequestException(
+          'La sucursal seleccionada no pertenece a esta botica.',
+        );
     }
 
     const usuario = await this.prisma.$transaction(async (tx) => {
       const nuevo = await tx.usuarios.create({
-      data: {
-        botica_id: boticaId,
-        nombre: dto.nombre.trim(),
-        correo: dto.correo.trim().toLowerCase(),
-        password_hash,
-        rol_id: dto.rol_id,
-        estado: dto.estado || 'ACTIVO',
-      },
+        data: {
+          botica_id: boticaId,
+          nombre: dto.nombre.trim(),
+          correo: dto.correo.trim().toLowerCase(),
+          password_hash,
+          rol_id: dto.rol_id,
+          estado: dto.estado || 'ACTIVO',
+        },
       });
       if (dto.sucursal_id) {
-        await tx.usuario_sucursales.create({ data: { usuario_id: nuevo.id, botica_id: boticaId, sucursal_id: dto.sucursal_id, es_principal: true, activo: true } });
+        await tx.usuario_sucursales.create({
+          data: {
+            usuario_id: nuevo.id,
+            botica_id: boticaId,
+            sucursal_id: dto.sucursal_id,
+            es_principal: true,
+            activo: true,
+          },
+        });
       }
       return nuevo;
     });
@@ -157,12 +178,31 @@ export class UsuariosService {
     });
 
     if (dto.sucursal_id) {
-      const sucursal = await this.prisma.sucursales.findFirst({ where: { id: dto.sucursal_id, botica_id: boticaId, deleted_at: null } });
-      if (!sucursal) throw new BadRequestException('La sucursal seleccionada no pertenece a esta botica.');
-      await this.prisma.usuario_sucursales.updateMany({ where: { usuario_id: id, activo: true }, data: { activo: false, es_principal: false } });
+      const sucursal = await this.prisma.sucursales.findFirst({
+        where: { id: dto.sucursal_id, botica_id: boticaId, deleted_at: null },
+      });
+      if (!sucursal)
+        throw new BadRequestException(
+          'La sucursal seleccionada no pertenece a esta botica.',
+        );
+      await this.prisma.usuario_sucursales.updateMany({
+        where: { usuario_id: id, activo: true },
+        data: { activo: false, es_principal: false },
+      });
       await this.prisma.usuario_sucursales.upsert({
-        where: { usuario_id_sucursal_id: { usuario_id: id, sucursal_id: dto.sucursal_id } },
-        create: { usuario_id: id, botica_id: boticaId, sucursal_id: dto.sucursal_id, es_principal: true, activo: true },
+        where: {
+          usuario_id_sucursal_id: {
+            usuario_id: id,
+            sucursal_id: dto.sucursal_id,
+          },
+        },
+        create: {
+          usuario_id: id,
+          botica_id: boticaId,
+          sucursal_id: dto.sucursal_id,
+          es_principal: true,
+          activo: true,
+        },
         update: { activo: true, es_principal: true },
       });
     }
@@ -206,8 +246,12 @@ export class UsuariosService {
       where: { botica_id: boticaId, deleted_at: null },
       select: { nombre: true },
     });
-    const nombresExistentes = new Set(existentes.map((rol) => rol.nombre.toUpperCase()));
-    const faltantes = rolesBase.filter((nombre) => !nombresExistentes.has(nombre));
+    const nombresExistentes = new Set(
+      existentes.map((rol) => rol.nombre.toUpperCase()),
+    );
+    const faltantes = rolesBase.filter(
+      (nombre) => !nombresExistentes.has(nombre),
+    );
     if (faltantes.length > 0) {
       await this.prisma.roles.createMany({
         data: faltantes.map((nombre) => ({ botica_id: boticaId, nombre })),
@@ -228,7 +272,9 @@ export class UsuariosService {
       select: { codigo: true },
     });
     const codigosExistentes = new Set(permisosExistentes.map((p) => p.codigo));
-    const permisosFaltantes = permisosBase.filter((p) => !codigosExistentes.has(p.codigo));
+    const permisosFaltantes = permisosBase.filter(
+      (p) => !codigosExistentes.has(p.codigo),
+    );
     if (permisosFaltantes.length > 0) {
       await this.prisma.permisos.createMany({
         data: permisosFaltantes.map((p) => ({
@@ -258,7 +304,9 @@ export class UsuariosService {
           ? ['ventas', 'inventario', 'clientes', 'reportes', 'admin']
           : ['ventas', 'inventario', 'clientes'];
 
-        const permisosAAsignar = todosPermisos.filter((p) => codigosAsignar.includes(p.codigo));
+        const permisosAAsignar = todosPermisos.filter((p) =>
+          codigosAsignar.includes(p.codigo),
+        );
         if (permisosAAsignar.length > 0) {
           await this.prisma.rol_permisos.createMany({
             data: permisosAAsignar.map((p) => ({
@@ -306,9 +354,9 @@ export class UsuariosService {
   async createSucursal(
     boticaId: string,
     dto: {
-    nombre: string;
-    direccion: string;
-    telefono?: string;
+      nombre: string;
+      direccion: string;
+      telefono?: string;
     },
     usuarioId?: string,
   ) {
@@ -342,7 +390,11 @@ export class UsuariosService {
     };
   }
 
-  async actualizarRolPermisos(boticaId: string, rolId: string, dto: { permisosIds: string[] }) {
+  async actualizarRolPermisos(
+    boticaId: string,
+    rolId: string,
+    dto: { permisosIds: string[] },
+  ) {
     this.logger.log(`Actualizando permisos para el rol ${rolId}`);
 
     const rol = await this.prisma.roles.findFirst({
@@ -360,7 +412,11 @@ export class UsuariosService {
     // Create new permissions
     if (dto.permisosIds && dto.permisosIds.length > 0) {
       const validPermisos = await this.prisma.permisos.findMany({
-        where: { id: { in: dto.permisosIds }, botica_id: boticaId, deleted_at: null },
+        where: {
+          id: { in: dto.permisosIds },
+          botica_id: boticaId,
+          deleted_at: null,
+        },
       });
 
       if (validPermisos.length > 0) {

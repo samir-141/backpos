@@ -50,7 +50,10 @@ export class ClientesController {
   @ApiOperation({
     summary: 'Buscar cliente por número de documento de identidad',
   })
-  buscarPorDocumento(@Param('documento') documento: string, @Request() req: any) {
+  buscarPorDocumento(
+    @Param('documento') documento: string,
+    @Request() req: any,
+  ) {
     return this.clientesService.buscarPorDocumento(req.botica_id, documento);
   }
 
@@ -71,8 +74,17 @@ export class ClientesController {
 
   @Patch(':id')
   @ApiOperation({ summary: 'Actualizar información de un cliente existente' })
-  update(@Param('id') id: string, @Body() updateDto: UpdateClienteDto, @Request() req: any) {
-    return this.clientesService.update(req.botica_id, id, updateDto, req.user.id);
+  update(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateClienteDto,
+    @Request() req: any,
+  ) {
+    return this.clientesService.update(
+      req.botica_id,
+      id,
+      updateDto,
+      req.user.id,
+    );
   }
 
   @Delete(':id')

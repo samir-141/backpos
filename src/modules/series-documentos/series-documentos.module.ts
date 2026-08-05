@@ -7,6 +7,6 @@ import { SeriesDocumentosService } from './series-documentos.service';
   imports: [PrismaModule],
   controllers: [SeriesDocumentosController],
   providers: [SeriesDocumentosService],
-  exports: [SeriesDocumentosService]
+  exports: [SeriesDocumentosService],
 })
 export class SeriesDocumentosModule {}

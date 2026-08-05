@@ -381,69 +381,90 @@ export class DashboardService {
       gastosOperativosHistoricos,
       ventasHistoricas,
       lotesVigentesParaProyeccion,
-    ] =
-      await Promise.all([
-        this.prisma.compras.aggregate({
-          where: { botica_id: boticaId, deleted_at: null },
-          _sum: { total: true },
-        }),
-        this.prisma.gastos_operativos.aggregate({
-          where: { botica_id: boticaId, tipo: 'INVERSION', deleted_at: null },
-          _sum: { monto: true },
-        }),
-        this.prisma.gastos_operativos.aggregate({
-          where: { botica_id: boticaId, tipo: 'OPERATIVO', deleted_at: null },
-          _sum: { monto: true },
-        }),
-        this.prisma.ventas.findMany({
-          where: { botica_id: boticaId, deleted_at: null },
-          include: {
-            detalles_ventas: {
-              include: {
-                lotes: { select: { precio_compra_unidad_base: true } },
-                productos_presentaciones: { select: { cantidad_unidad_base: true } },
+    ] = await Promise.all([
+      this.prisma.compras.aggregate({
+        where: { botica_id: boticaId, deleted_at: null },
+        _sum: { total: true },
+      }),
+      this.prisma.gastos_operativos.aggregate({
+        where: { botica_id: boticaId, tipo: 'INVERSION', deleted_at: null },
+        _sum: { monto: true },
+      }),
+      this.prisma.gastos_operativos.aggregate({
+        where: { botica_id: boticaId, tipo: 'OPERATIVO', deleted_at: null },
+        _sum: { monto: true },
+      }),
+      this.prisma.ventas.findMany({
+        where: { botica_id: boticaId, deleted_at: null },
+        include: {
+          detalles_ventas: {
+            include: {
+              lotes: { select: { precio_compra_unidad_base: true } },
+              productos_presentaciones: {
+                select: { cantidad_unidad_base: true },
               },
             },
           },
-        }),
-        this.prisma.lotes.findMany({
-          where: {
-            botica_id: boticaId,
-            deleted_at: null,
-            stock_actual: { gt: 0 },
-            fecha_vencimiento: { gte: hoy },
-          },
-          select: {
-            stock_actual: true,
-            precio_compra_unidad_base: true,
-            productos_comerciales: {
-              select: {
-                productos_presentaciones: {
-                  where: { deleted_at: null },
-                  select: {
-                    cantidad_unidad_base: true,
-                    precio_actual: true,
-                  },
-                  orderBy: { cantidad_unidad_base: 'asc' },
+        },
+      }),
+      this.prisma.lotes.findMany({
+        where: {
+          botica_id: boticaId,
+          deleted_at: null,
+          stock_actual: { gt: 0 },
+          fecha_vencimiento: { gte: hoy },
+        },
+        select: {
+          stock_actual: true,
+          precio_compra_unidad_base: true,
+          productos_comerciales: {
+            select: {
+              productos_presentaciones: {
+                where: { deleted_at: null },
+                select: {
+                  cantidad_unidad_base: true,
+                  precio_actual: true,
                 },
+                orderBy: { cantidad_unidad_base: 'asc' },
               },
             },
           },
-        }),
-      ]);
-    const comprasInventarioHistoricas = Number(comprasHistoricas._sum.total || 0);
-    const inversionesHistoricasTotal = Number(inversionesHistoricas._sum.monto || 0);
-    const gastosOperativosHistoricosTotal = Number(gastosOperativosHistoricos._sum.monto || 0);
+        },
+      }),
+    ]);
+    const comprasInventarioHistoricas = Number(
+      comprasHistoricas._sum.total || 0,
+    );
+    const inversionesHistoricasTotal = Number(
+      inversionesHistoricas._sum.monto || 0,
+    );
+    const gastosOperativosHistoricosTotal = Number(
+      gastosOperativosHistoricos._sum.monto || 0,
+    );
     const metaCapital =
       comprasInventarioHistoricas +
       inversionesHistoricasTotal +
       gastosOperativosHistoricosTotal;
-    const ingresosHistoricos = ventasHistoricas.reduce((total, venta) => total + Number(venta.total), 0);
-    const costoVentasHistorico = ventasHistoricas.reduce((total, venta) => total + venta.detalles_ventas.reduce((costoVenta, detalle) => {
-      const costoBase = Number(detalle.costo_unitario_base ?? detalle.lotes?.precio_compra_unidad_base ?? 0);
-      const equivalencia = Number(detalle.productos_presentaciones?.cantidad_unidad_base || 1);
-      return costoVenta + costoBase * detalle.cantidad * equivalencia;
-    }, 0), 0);
+    const ingresosHistoricos = ventasHistoricas.reduce(
+      (total, venta) => total + Number(venta.total),
+      0,
+    );
+    const costoVentasHistorico = ventasHistoricas.reduce(
+      (total, venta) =>
+        total +
+        venta.detalles_ventas.reduce((costoVenta, detalle) => {
+          const costoBase = Number(
+            detalle.costo_unitario_base ??
+              detalle.lotes?.precio_compra_unidad_base ??
+              0,
+          );
+          const equivalencia = Number(
+            detalle.productos_presentaciones?.cantidad_unidad_base || 1,
+          );
+          return costoVenta + costoBase * detalle.cantidad * equivalencia;
+        }, 0),
+      0,
+    );
     // Resultado global: no depende del filtro de fechas ni de sucursal.
     // El payback solo puede recuperar inversión cuando este resultado es positivo;
     // el saldo negativo se conserva para mostrar una pérdida real, no se maquilla.
@@ -466,7 +487,8 @@ export class DashboardService {
     // No se usan lotes vencidos ni se mezcla con las ventas realizadas.
     const proyeccionStock = lotesVigentesParaProyeccion.reduce(
       (acumulado, lote) => {
-        const presentaciones = lote.productos_comerciales.productos_presentaciones;
+        const presentaciones =
+          lote.productos_comerciales.productos_presentaciones;
         const presentacionBase =
           presentaciones.find((p) => p.cantidad_unidad_base === 1) ??
           presentaciones[0];

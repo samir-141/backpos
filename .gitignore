@@ -89,4 +89,14 @@ Thumbs.db
 .temp/
 .tmp/
 
+# ==============================================================================
+# Facturación Electrónica SUNAT (secretos y artefactos tributarios)
+# ==============================================================================
+*.pfx
+*.p12
+*.pem
+*.key
+/storage/
+/secrets/
+
 /src/generated/prisma

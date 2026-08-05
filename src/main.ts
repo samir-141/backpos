@@ -1,10 +1,11 @@
 // src/main.ts
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
-import 'dotenv/config';
+import { createCorsOptions } from './common/config/cors.config';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const logger = new Logger('Bootstrap');
@@ -19,11 +20,7 @@ async function bootstrap() {
       transform: true,
     }),
   );
-  app.enableCors({
-    origin: true,
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    credentials: true,
-  });
+  app.enableCors(createCorsOptions());
 
   // Swagger
   const config = new DocumentBuilder()
@@ -44,4 +41,4 @@ async function bootstrap() {
   logger.log(`✅ Aplicación inicializada correctamente`);
 }
 
-bootstrap();
+void bootstrap();

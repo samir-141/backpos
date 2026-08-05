@@ -9,6 +9,7 @@ import { TenantGuard } from './guards/tenant.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { PlatformAdminGuard } from './guards/platform-admin.guard';
 
 @Module({
   imports: [
@@ -25,7 +26,13 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
     PrismaModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, TenantGuard, RolesGuard],
-  exports: [AuthService, TenantGuard, RolesGuard],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    TenantGuard,
+    RolesGuard,
+    PlatformAdminGuard,
+  ],
+  exports: [AuthService, TenantGuard, RolesGuard, PlatformAdminGuard],
 })
 export class AuthModule {}

@@ -21,14 +21,32 @@ import { QueryProductosDto } from './dto/query-productos.dto';
 import { CreateProductoDto } from './dto/create-producto.dto';
 import { UpdateProductoDto } from './dto/update-producto.dto';
 import { TenantGuard } from '../../auth/guards/tenant.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+
+const ROLES_LECTURA_PRODUCTOS = [
+  'ADMINISTRADOR',
+  'GERENTE',
+  'FARMACÉUTICO',
+  'ALMACENERO',
+  'CAJERO',
+  'VENDEDOR',
+];
+const ROLES_GESTION_INVENTARIO = [
+  'ADMINISTRADOR',
+  'GERENTE',
+  'FARMACÉUTICO',
+  'ALMACENERO',
+];
 
 @ApiTags('Productos')
 @Controller('productos')
-@UseGuards(AuthGuard('jwt'), TenantGuard)
+@UseGuards(AuthGuard('jwt'), TenantGuard, RolesGuard)
 export class ProductosController {
   constructor(private readonly productosService: ProductosService) {}
 
   @Get()
+  @Roles(...ROLES_LECTURA_PRODUCTOS)
   @ApiOperation({
     summary: 'Listar productos con paginación, filtros y ordenamiento',
   })
@@ -40,11 +58,16 @@ export class ProductosController {
     const sucursalId = query.sucursal_id || sucursalHeader;
     return this.productosService.findAll(
       req.botica_id,
-      { ...query, sucursal_id: sucursalId },
+      {
+        ...query,
+        sucursal_id: sucursalId,
+      },
+      req.user.id,
     );
   }
 
   @Get('sucursal/:sucursalId')
+  @Roles(...ROLES_LECTURA_PRODUCTOS)
   @ApiOperation({ summary: 'Listar productos filtrados por ID de sucursal' })
   findBySucursal(
     @Request() req: any,
@@ -53,23 +76,26 @@ export class ProductosController {
   ) {
     return this.productosService.findAll(
       req.botica_id,
-      { ...query, sucursal_id: sucursalId },
+      {
+        ...query,
+        sucursal_id: sucursalId,
+      },
+      req.user.id,
     );
   }
 
   @Get('buscar/identificador')
+  @Roles(...ROLES_LECTURA_PRODUCTOS)
   @ApiOperation({
     summary:
       'Buscar producto comercial o presentación por SKU, código de barras o código interno',
   })
-  buscarPorIdentificador(
-    @Query('valor') valor: string,
-    @Request() req: any,
-  ) {
+  buscarPorIdentificador(@Query('valor') valor: string, @Request() req: any) {
     return this.productosService.buscarPorIdentificador(req.botica_id, valor);
   }
 
   @Get(':id')
+  @Roles(...ROLES_LECTURA_PRODUCTOS)
   @ApiOperation({
     summary: 'Obtener detalle de un producto comercial por su ID',
   })
@@ -78,6 +104,7 @@ export class ProductosController {
   }
 
   @Post()
+  @Roles(...ROLES_GESTION_INVENTARIO)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary:
@@ -88,15 +115,21 @@ export class ProductosController {
   }
 
   @Patch(':id')
+  @Roles(...ROLES_GESTION_INVENTARIO)
   @ApiOperation({
     summary:
       'Actualizar campos editables de un producto comercial o su presentación',
   })
-  update(@Param('id') id: string, @Body() updateDto: UpdateProductoDto, @Request() req: any) {
+  update(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateProductoDto,
+    @Request() req: any,
+  ) {
     return this.productosService.update(req.botica_id, id, updateDto);
   }
 
   @Post('reabastecer')
+  @Roles(...ROLES_GESTION_INVENTARIO)
   @ApiOperation({
     summary:
       'Reabastecer stock de un producto agregando un lote nuevo o existente (+500 unidades)',
@@ -113,10 +146,15 @@ export class ProductosController {
       precio_compra_base: number;
     },
   ) {
-    return this.productosService.reabastecerStock(req.botica_id, dto, req.user.id);
+    return this.productosService.reabastecerStock(
+      req.botica_id,
+      dto,
+      req.user.id,
+    );
   }
 
   @Post(':id/presentaciones')
+  @Roles(...ROLES_GESTION_INVENTARIO)
   @ApiOperation({
     summary:
       'Configurar/Actualizar presentaciones de venta unificadas por producto',
@@ -143,6 +181,7 @@ export class ProductosController {
   }
 
   @Delete(':id')
+  @Roles(...ROLES_GESTION_INVENTARIO)
   @ApiOperation({
     summary: 'Marcar como eliminado (soft delete) un producto comercial',
   })

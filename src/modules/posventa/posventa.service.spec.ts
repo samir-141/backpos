@@ -7,9 +7,21 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 const BOTICA_ID = 'botica-1';
 
+interface PrismaPosventaMock {
+  $transaction: jest.Mock;
+  ventas: { findFirst: jest.Mock; update: jest.Mock };
+  lotes: { findFirst: jest.Mock; findMany: jest.Mock; update: jest.Mock };
+  detalles_ventas: { findFirst: jest.Mock };
+  cajas: { findFirst: jest.Mock };
+  sucursales: { findUnique: jest.Mock };
+  movimientos_inventario: { create: jest.Mock };
+  tipos_movimientos_inventario: { findFirst: jest.Mock };
+  migracion_log: { create: jest.Mock };
+}
+
 describe('PosventaService', () => {
   let service: PosventaService;
-  let prisma: jest.Mocked<PrismaService>;
+  let prisma: PrismaPosventaMock;
   let auditService: jest.Mocked<AuditService>;
   let eventsGateway: jest.Mocked<EventsGateway>;
 
@@ -43,7 +55,7 @@ describe('PosventaService', () => {
       migracion_log: {
         create: jest.fn(),
       },
-    } as any;
+    };
 
     auditService = {
       registrar: jest.fn(),
@@ -405,10 +417,13 @@ describe('PosventaService', () => {
       expect(result.exito).toBe(true);
       expect(result.tipo).toBe('CAMBIO');
       expect(auditService.registrar).toHaveBeenCalled();
-      expect(eventsGateway.emitirEvento).toHaveBeenCalledWith('garantia.registrada', {
-        venta_id: 'venta-1',
-        tipo: 'CAMBIO',
-      });
+      expect(eventsGateway.emitirEvento).toHaveBeenCalledWith(
+        'garantia.registrada',
+        {
+          venta_id: 'venta-1',
+          tipo: 'CAMBIO',
+        },
+      );
     });
   });
 
@@ -446,10 +461,13 @@ describe('PosventaService', () => {
       expect(result.exito).toBe(true);
       expect(result.tipo).toBe('PRODUCTO');
       expect(auditService.registrar).toHaveBeenCalled();
-      expect(eventsGateway.emitirEvento).toHaveBeenCalledWith('reclamo.creado', {
-        venta_id: 'venta-1',
-        tipo: 'PRODUCTO',
-      });
+      expect(eventsGateway.emitirEvento).toHaveBeenCalledWith(
+        'reclamo.creado',
+        {
+          venta_id: 'venta-1',
+          tipo: 'PRODUCTO',
+        },
+      );
     });
   });
 

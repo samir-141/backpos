@@ -3,7 +3,6 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ProductsModule } from './products/products.module';
 import { PrismaModule } from './prisma/prisma.module';
-import { TestController } from './test/test.controller';
 import { ProductosModule } from './modules/productos/productos.module';
 import { UsuariosModule } from './modules/usuarios/usuarios.module';
 import { AuthModule } from './auth/auth.module';
@@ -22,6 +21,9 @@ import { PosventaModule } from './modules/posventa/posventa.module';
 import { GastosModule } from './modules/gastos/gastos.module';
 import { SeriesDocumentosModule } from './modules/series-documentos/series-documentos.module';
 import { AdministracionGeneralModule } from './modules/administracion-general/administracion-general.module';
+import { ComprasModule } from './modules/compras/compras.module';
+import { ProveedoresModule } from './modules/proveedores/proveedores.module';
+import { ComprobantesImpresionModule } from './modules/comprobantes-impresion/comprobantes-impresion.module';
 
 @Module({
   imports: [
@@ -45,8 +47,11 @@ import { AdministracionGeneralModule } from './modules/administracion-general/ad
     GastosModule,
     SeriesDocumentosModule,
     AdministracionGeneralModule,
+    ComprasModule,
+    ProveedoresModule,
+    ComprobantesImpresionModule,
   ],
-  controllers: [AppController, TestController],
+  controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule {}

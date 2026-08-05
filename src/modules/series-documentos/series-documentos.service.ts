@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateSerieDocumentoDto } from './dto/create-serie-documento.dto';
 import { UpdateSerieDocumentoDto } from './dto/update-serie-documento.dto';
@@ -10,10 +14,7 @@ export class SeriesDocumentosService {
   async listar(boticaId: string) {
     return this.prisma.series_documentos.findMany({
       where: { botica_id: boticaId },
-      orderBy: [
-        { tipo_documento: 'asc' },
-        { serie: 'asc' }
-      ]
+      orderBy: [{ tipo_documento: 'asc' }, { serie: 'asc' }],
     });
   }
 
@@ -23,7 +24,9 @@ export class SeriesDocumentosService {
         where: { id: dto.sucursal_id, botica_id: boticaId, deleted_at: null },
       });
       if (!sucursal) {
-        throw new BadRequestException('La sucursal indicada no pertenece a la botica.');
+        throw new BadRequestException(
+          'La sucursal indicada no pertenece a la botica.',
+        );
       }
     }
 
@@ -37,7 +40,9 @@ export class SeriesDocumentosService {
       },
     });
     if (existing) {
-      throw new BadRequestException('Ya existe una serie registrada con el mismo código y tipo de documento para esta sucursal/sede.');
+      throw new BadRequestException(
+        'Ya existe una serie registrada con el mismo código y tipo de documento para esta sucursal/sede.',
+      );
     }
 
     return this.prisma.series_documentos.create({
@@ -67,14 +72,27 @@ export class SeriesDocumentosService {
         where: { id: dto.sucursal_id, botica_id: boticaId, deleted_at: null },
       });
       if (!sucursal) {
-        throw new BadRequestException('La sucursal indicada no pertenece a la botica.');
+        throw new BadRequestException(
+          'La sucursal indicada no pertenece a la botica.',
+        );
       }
     }
 
-    if (dto.serie !== undefined || dto.tipo_documento !== undefined || dto.sucursal_id !== undefined) {
-      const targetSerie = dto.serie !== undefined ? dto.serie.trim().toUpperCase() : serie.serie;
-      const targetTipo = dto.tipo_documento !== undefined ? dto.tipo_documento : serie.tipo_documento;
-      const targetSucursal = dto.sucursal_id !== undefined ? (dto.sucursal_id || null) : serie.sucursal_id;
+    if (
+      dto.serie !== undefined ||
+      dto.tipo_documento !== undefined ||
+      dto.sucursal_id !== undefined
+    ) {
+      const targetSerie =
+        dto.serie !== undefined ? dto.serie.trim().toUpperCase() : serie.serie;
+      const targetTipo =
+        dto.tipo_documento !== undefined
+          ? dto.tipo_documento
+          : serie.tipo_documento;
+      const targetSucursal =
+        dto.sucursal_id !== undefined
+          ? dto.sucursal_id || null
+          : serie.sucursal_id;
 
       const existing = await this.prisma.series_documentos.findFirst({
         where: {
@@ -86,7 +104,9 @@ export class SeriesDocumentosService {
         },
       });
       if (existing) {
-        throw new BadRequestException('Ya existe otra serie registrada con el mismo código y tipo de documento para esta sucursal/sede.');
+        throw new BadRequestException(
+          'Ya existe otra serie registrada con el mismo código y tipo de documento para esta sucursal/sede.',
+        );
       }
     }
 

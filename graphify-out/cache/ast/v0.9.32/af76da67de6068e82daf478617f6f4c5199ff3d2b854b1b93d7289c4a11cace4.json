@@ -1,0 +1,1 @@
+{"nodes": [{"id": "$graphify-root$_prisma_migrations_20260729053000_registrar_inversiones_lotes_manual_migration_sql", "label": "migration.sql", "file_type": "code", "source_file": "prisma/migrations/20260729053000_registrar_inversiones_lotes_manual/migration.sql", "source_location": null}], "edges": []}

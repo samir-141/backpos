@@ -6,6 +6,9 @@ import {
   IsArray,
   ValidateNested,
   IsUUID,
+  IsInt,
+  Min,
+  ArrayMinSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -32,7 +35,7 @@ export class DatosClienteDto {
 export class DetalleVentaItemDto {
   @ApiProperty()
   @IsNotEmpty()
-  @IsString()
+  @IsUUID()
   producto_comercial_id: string;
 
   @ApiProperty()
@@ -40,23 +43,34 @@ export class DetalleVentaItemDto {
   @IsString()
   presentacion_nombre: string;
 
-  @ApiPropertyOptional({ description: 'ID de la presentación seleccionada en el POS' })
-  @IsOptional()
+  @ApiProperty({ description: 'ID de la presentación seleccionada en el POS' })
   @IsUUID()
-  producto_presentacion_id?: string;
+  producto_presentacion_id: string;
 
   @ApiProperty()
   @IsNotEmpty()
-  @IsNumber()
+  @IsInt()
+  @Min(1)
   cantidad: number;
 
-  @ApiProperty()
-  @IsNotEmpty()
+  @ApiPropertyOptional({
+    description:
+      'Valor informativo legado. El backend usa precio_actual de la presentación.',
+  })
+  @IsOptional()
   @IsNumber()
-  precio_unitario: number;
+  precio_unitario?: number;
 }
 
 export class CreateVentaDto {
+  @ApiPropertyOptional({
+    description:
+      'UUID estable por intento de venta. Temporalmente opcional para clientes antiguos; sin él no hay garantía de reintento.',
+  })
+  @IsOptional()
+  @IsUUID()
+  idempotency_key?: string;
+
   @ApiProperty()
   @IsNotEmpty()
   @IsString()
@@ -88,23 +102,30 @@ export class CreateVentaDto {
   @Type(() => DatosClienteDto)
   datos_cliente?: DatosClienteDto;
 
-  @ApiProperty()
-  @IsNotEmpty()
+  @ApiPropertyOptional({
+    description: 'Valor informativo; el backend lo recalcula.',
+  })
+  @IsOptional()
   @IsNumber()
-  subtotal: number;
+  subtotal?: number;
 
-  @ApiProperty()
-  @IsNotEmpty()
+  @ApiPropertyOptional({
+    description: 'Valor informativo; el backend lo recalcula.',
+  })
+  @IsOptional()
   @IsNumber()
-  igv: number;
+  igv?: number;
 
-  @ApiProperty()
-  @IsNotEmpty()
+  @ApiPropertyOptional({
+    description: 'Valor informativo; el backend lo recalcula.',
+  })
+  @IsOptional()
   @IsNumber()
-  total: number;
+  total?: number;
 
   @ApiProperty({ type: [DetalleVentaItemDto] })
   @IsArray()
+  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => DetalleVentaItemDto)
   items: DetalleVentaItemDto[];

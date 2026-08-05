@@ -48,7 +48,11 @@ export class UsuariosController {
     @Body() body: { permisosIds: string[] },
     @Request() req: any,
   ) {
-    return this.usuariosService.actualizarRolPermisos(req.botica_id, rolId, body);
+    return this.usuariosService.actualizarRolPermisos(
+      req.botica_id,
+      rolId,
+      body,
+    );
   }
 
   @Get('sucursales')
@@ -66,7 +70,11 @@ export class UsuariosController {
     @Body() body: { nombre: string; direccion: string; telefono?: string },
     @Request() req: any,
   ) {
-    return this.usuariosService.createSucursal(req.botica_id, body, req.user.id);
+    return this.usuariosService.createSucursal(
+      req.botica_id,
+      body,
+      req.user.id,
+    );
   }
 
   @Get(':id')
@@ -88,7 +96,11 @@ export class UsuariosController {
   @UseGuards(RolesGuard)
   @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @ApiOperation({ summary: 'Actualizar información o contraseña de usuario' })
-  update(@Param('id') id: string, @Body() updateDto: UpdateUsuarioDto, @Request() req: any) {
+  update(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateUsuarioDto,
+    @Request() req: any,
+  ) {
     return this.usuariosService.update(req.botica_id, id, updateDto);
   }
 

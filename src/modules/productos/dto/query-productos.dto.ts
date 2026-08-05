@@ -32,12 +32,12 @@ export class QueryProductosDto {
     description: 'Items por página',
     default: 20,
     minimum: 1,
-    maximum: 100,
+    maximum: 300,
   })
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(100)
+  @Max(300)
   @IsOptional()
   limit?: number = 20;
 

@@ -1,0 +1,20 @@
+# El código canónico vive en src/ (nest-cli sourceRoot). Estos son duplicados viejos.
+/auth
+/common
+/docs
+/modules
+/products
+/socket
+/test
+/users
+/app.controller.ts
+/app.controller.spec.ts
+/app.module.ts
+/app.service.ts
+/main.ts
+
+# Generado y ruido
+/generated
+/src/generated
+/temp
+*.log

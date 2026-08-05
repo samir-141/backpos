@@ -34,22 +34,30 @@ export class PresentacionProductoDto {
 }
 
 export class CreateProductoDto {
-  @ApiPropertyOptional({ enum: ['MEDICAMENTO', 'HIGIENE', 'BEBE', 'COSMETICO', 'ACCESORIO', 'OTRO'] })
+  @ApiPropertyOptional({
+    enum: ['MEDICAMENTO', 'HIGIENE', 'BEBE', 'COSMETICO', 'ACCESORIO', 'OTRO'],
+  })
   @IsOptional()
   @IsString()
   tipo_producto?: string;
 
-  @ApiPropertyOptional({ description: 'Indica si el producto se controla por lotes' })
+  @ApiPropertyOptional({
+    description: 'Indica si el producto se controla por lotes',
+  })
   @IsOptional()
   @IsBoolean()
   controla_lote?: boolean;
 
-  @ApiPropertyOptional({ description: 'Indica si se registra vencimiento al ingresar stock' })
+  @ApiPropertyOptional({
+    description: 'Indica si se registra vencimiento al ingresar stock',
+  })
   @IsOptional()
   @IsBoolean()
   requiere_vencimiento?: boolean;
 
-  @ApiPropertyOptional({ description: 'Atributos del producto general: talla, color, modelo, etc.' })
+  @ApiPropertyOptional({
+    description: 'Atributos del producto general: talla, color, modelo, etc.',
+  })
   @IsOptional()
   atributos?: Record<string, string>;
   @ApiPropertyOptional({
@@ -57,7 +65,7 @@ export class CreateProductoDto {
       'ID del producto comercial existente si ya existe y solo se agrega una presentación',
   })
   @IsOptional()
-  @Transform(({ value }) => value === '' ? undefined : value)
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsUUID()
   producto_comercial_id?: string;
 
@@ -78,25 +86,25 @@ export class CreateProductoDto {
 
   @ApiProperty({ description: 'ID del catálogo de principios activos' })
   @IsOptional()
-  @Transform(({ value }) => value === '' ? undefined : value)
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsUUID()
   principio_activo_id?: string;
 
   @ApiProperty({ description: 'ID del catálogo de formas farmacéuticas' })
   @IsOptional()
-  @Transform(({ value }) => value === '' ? undefined : value)
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsUUID()
   forma_farmaceutica_id?: string;
 
   @ApiProperty({ description: 'ID del catálogo de laboratorios' })
   @IsOptional()
-  @Transform(({ value }) => value === '' ? undefined : value)
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsUUID()
   laboratorio_id?: string;
 
   @ApiProperty({ description: 'ID del catálogo de categorías' })
   @IsOptional()
-  @Transform(({ value }) => value === '' ? undefined : value)
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsUUID()
   categoria_id?: string;
 
@@ -133,9 +141,11 @@ export class CreateProductoDto {
   @IsUUID()
   presentacion_id: string;
 
-  @ApiPropertyOptional({ description: 'Unidad mínima del inventario; debe tener equivalencia 1' })
+  @ApiPropertyOptional({
+    description: 'Unidad mínima del inventario; debe tener equivalencia 1',
+  })
   @IsOptional()
-  @Transform(({ value }) => value === '' ? undefined : value)
+  @Transform(({ value }) => (value === '' ? undefined : value))
   @IsUUID()
   unidad_base_id?: string;
 

@@ -348,7 +348,12 @@ export class ClientesService {
     });
   }
 
-  async update(boticaId: string, id: string, dto: UpdateClienteDto, usuarioId?: string) {
+  async update(
+    boticaId: string,
+    id: string,
+    dto: UpdateClienteDto,
+    usuarioId?: string,
+  ) {
     this.logger.log(`Actualizando cliente con ID: ${id}`);
 
     const cliente = await this.prisma.clientes.findFirst({

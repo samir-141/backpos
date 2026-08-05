@@ -1,4 +1,11 @@
-import { Controller, Get, Query, Headers, Request, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  Headers,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ReportesService } from './reportes.service';
@@ -46,7 +53,10 @@ export class ReportesController {
   }
 
   @Get('financiero')
-  @ApiOperation({ summary: 'Reporte administrativo de flujo, costos, gastos y capital inmovilizado' })
+  @ApiOperation({
+    summary:
+      'Reporte administrativo de flujo, costos, gastos y capital inmovilizado',
+  })
   getReporteFinanciero(@Request() req: any, @Query() query: QueryReportesDto) {
     return this.reportesService.getReporteFinanciero(req.botica_id, query);
   }

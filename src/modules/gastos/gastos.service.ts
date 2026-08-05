@@ -6,14 +6,24 @@ import { CreateGastoDto } from './dto/create-gasto.dto';
 export class GastosService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listar(boticaId: string, sucursalId?: string, desde?: string, hasta?: string) {
+  async listar(
+    boticaId: string,
+    sucursalId?: string,
+    desde?: string,
+    hasta?: string,
+  ) {
     return this.prisma.gastos_operativos.findMany({
       where: {
         botica_id: boticaId,
         deleted_at: null,
         ...(sucursalId ? { sucursal_id: sucursalId } : {}),
         ...(desde || hasta
-          ? { fecha: { ...(desde ? { gte: new Date(desde) } : {}), ...(hasta ? { lte: new Date(hasta) } : {}) } }
+          ? {
+              fecha: {
+                ...(desde ? { gte: new Date(desde) } : {}),
+                ...(hasta ? { lte: new Date(hasta) } : {}),
+              },
+            }
           : {}),
       },
       orderBy: { fecha: 'desc' },
@@ -25,7 +35,10 @@ export class GastosService {
       const sucursal = await this.prisma.sucursales.findFirst({
         where: { id: dto.sucursal_id, botica_id: boticaId, deleted_at: null },
       });
-      if (!sucursal) throw new BadRequestException('La sucursal indicada no pertenece a la botica actual.');
+      if (!sucursal)
+        throw new BadRequestException(
+          'La sucursal indicada no pertenece a la botica actual.',
+        );
     }
 
     return this.prisma.gastos_operativos.create({
@@ -47,7 +60,10 @@ export class GastosService {
       where: { id, botica_id: boticaId, deleted_at: null },
     });
     if (!gasto) throw new BadRequestException('Gasto no encontrado.');
-    await this.prisma.gastos_operativos.update({ where: { id }, data: { deleted_at: new Date() } });
+    await this.prisma.gastos_operativos.update({
+      where: { id },
+      data: { deleted_at: new Date() },
+    });
     return { mensaje: 'Gasto eliminado correctamente' };
   }
 }

@@ -50,14 +50,24 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
         if (targetStr.includes('ruc')) {
           message = 'El RUC ingresado ya está registrado en otra empresa.';
-        } else if (targetStr.includes('correo') || targetStr.includes('email')) {
-          message = 'El correo electrónico del responsable o colaborador ya está registrado.';
-        } else if (targetStr.includes('metodos_pago') || targetStr.includes('nombre_activo')) {
-          message = 'El nombre o método de pago ingresado ya existe en el sistema.';
+        } else if (
+          targetStr.includes('correo') ||
+          targetStr.includes('email')
+        ) {
+          message =
+            'El correo electrónico del responsable o colaborador ya está registrado.';
+        } else if (
+          targetStr.includes('metodos_pago') ||
+          targetStr.includes('nombre_activo')
+        ) {
+          message =
+            'El nombre o método de pago ingresado ya existe en el sistema.';
         } else if (targetStr.includes('serie')) {
-          message = 'La serie ingresada para el comprobante ya existe en esta sucursal.';
+          message =
+            'La serie ingresada para el comprobante ya existe en esta sucursal.';
         } else {
-          message = 'Ya existe un registro con esos datos únicos en el sistema.';
+          message =
+            'Ya existe un registro con esos datos únicos en el sistema.';
           if (targetStr) {
             const cleanTarget = targetStr
               .replace(/idx_/g, '')

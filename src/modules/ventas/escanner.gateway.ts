@@ -1,46 +1,102 @@
 import {
-  WebSocketGateway,
-  WebSocketServer,
-  SubscribeMessage,
+  ConnectedSocket,
+  MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
-  MessageBody,
-  ConnectedSocket,
+  OnGatewayInit,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
 } from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
+import { randomBytes } from 'crypto';
+import { Server, Socket } from 'socket.io';
+import { SocketAuthService } from '../../socket/socket-auth.service';
+import { createCorsOptions } from '../../common/config/cors.config';
+
+interface ScannerSession {
+  code: string;
+  boticaId: string;
+  ownerSocketId: string;
+  phoneSocketId?: string;
+  expiresAt: number;
+  consumed: boolean;
+}
 
 @WebSocketGateway({
-  cors: {
-    origin: '*',
-  },
+  cors: createCorsOptions(),
   namespace: 'escanner',
 })
 export class EscannerGateway
-  implements OnGatewayConnection, OnGatewayDisconnect
+  implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit
 {
   @WebSocketServer()
   server: Server;
 
-  private readonly logger = new Logger('EscannerGateway');
-  // Guarda mapeo de socketId -> sessionCode
+  private readonly logger = new Logger(EscannerGateway.name);
+  private readonly sessions = new Map<string, ScannerSession>();
   private readonly socketSessionMap = new Map<string, string>();
+  private readonly sessionTtlMs = 5 * 60 * 1000;
 
-  handleConnection(client: Socket) {
-    this.logger.log(`📱 Cliente conectado a escáner gateway: ${client.id}`);
+  constructor(private readonly socketAuth: SocketAuthService) {}
+
+  afterInit(server: Server) {
+    server.use(async (client: Socket, next) => {
+      try {
+        await this.socketAuth.authenticate(client);
+        next();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'No autorizado';
+        next(new Error(message));
+      }
+    });
   }
 
-  handleDisconnect(client: Socket) {
-    const sessionCode = this.socketSessionMap.get(client.id);
-    if (sessionCode) {
-      this.socketSessionMap.delete(client.id);
-      this.server.to(sessionCode).emit('device_disconnected', {
-        socketId: client.id,
-        timestamp: Date.now(),
-      });
-      this.logger.log(
-        `📱 Cliente desconectado de sesión [${sessionCode}]: ${client.id}`,
-      );
+  handleConnection(client: Socket): void {
+    const user = this.socketAuth.getUser(client);
+    console.log(`[EscannerGateway] Conexión establecida y autenticada para: ${user.nombre} (${client.id})`);
+  }
+
+  handleDisconnect(client: Socket): void {
+    console.log(`[EscannerGateway] Dispositivo desconectado: ${client.id}`);
+    const code = this.socketSessionMap.get(client.id);
+    this.socketSessionMap.delete(client.id);
+    if (!code) return;
+
+    const session = this.sessions.get(code);
+    if (!session) return;
+    this.sessions.delete(code);
+    this.server?.to(code).emit('device_disconnected', {
+      socketId: client.id,
+      timestamp: Date.now(),
+    });
+  }
+
+  @SubscribeMessage('create_session')
+  createSession(@ConnectedSocket() client: Socket) {
+    console.log(`[EscannerGateway] Recibido 'create_session' de: ${client.id}`);
+    try {
+      const user = this.socketAuth.getUser(client);
+      console.log(`[EscannerGateway] Usuario obtenido para sesión:`, user);
+      this.removeSessionForSocket(client.id);
+
+      const code = randomBytes(18).toString('base64url').toUpperCase();
+      const session: ScannerSession = {
+        code,
+        boticaId: user.boticaId,
+        ownerSocketId: client.id,
+        expiresAt: Date.now() + this.sessionTtlMs,
+        consumed: false,
+      };
+      this.sessions.set(code, session);
+      this.socketSessionMap.set(client.id, code);
+      void client.join(code);
+
+      console.log(`[EscannerGateway] Sesión creada con éxito. Código: ${code}`);
+      return { success: true, sessionCode: code, expiresAt: session.expiresAt };
+    } catch (err) {
+      console.error(`[EscannerGateway] Error al crear sesión:`, err);
+      throw err;
     }
   }
 
@@ -48,65 +104,92 @@ export class EscannerGateway
   handleJoinSession(
     @ConnectedSocket() client: Socket,
     @MessageBody()
-    data: { sessionCode: string; role?: 'pc' | 'phone'; deviceName?: string },
+    data: { sessionCode?: string; role?: 'pc' | 'phone'; deviceName?: string },
   ) {
-    const sessionCode = String(data.sessionCode || '')
-      .toUpperCase()
-      .trim();
-    if (!sessionCode)
-      return { success: false, error: 'Código de sesión inválido' };
+    if (data?.role === 'pc') {
+      return this.createSession(client);
+    }
 
-    client.join(sessionCode);
-    this.socketSessionMap.set(client.id, sessionCode);
+    const user = this.socketAuth.getUser(client);
+    const code = this.normalizeCode(data?.sessionCode);
+    const session = code ? this.sessions.get(code) : undefined;
+    if (!session) return { success: false, error: 'Sesión no existe' };
+    if (session.expiresAt <= Date.now()) {
+      this.sessions.delete(code);
+      return { success: false, error: 'Sesión expirada' };
+    }
+    if (session.boticaId !== user.boticaId) {
+      return { success: false, error: 'Sesión de otra botica' };
+    }
+    if (session.consumed) {
+      return { success: false, error: 'Código de sesión ya utilizado' };
+    }
 
-    this.logger.log(
-      `🔗 [${data.role || 'device'}] unido a sala: ${sessionCode} (${data.deviceName || client.id})`,
-    );
-
-    // Notificar a otros dispositivos en la sala que se unió alguien
-    client.to(sessionCode).emit('device_joined', {
+    session.consumed = true;
+    session.phoneSocketId = client.id;
+    this.socketSessionMap.set(client.id, code);
+    void client.join(code);
+    client.to(code).emit('device_joined', {
       socketId: client.id,
-      role: data.role || 'phone',
-      deviceName: data.deviceName || 'Smartphone Remoto',
+      role: 'phone',
+      deviceName: data?.deviceName || 'Smartphone Remoto',
       timestamp: Date.now(),
     });
-
-    return { success: true, sessionCode };
+    return { success: true, sessionCode: code };
   }
 
   @SubscribeMessage('scan_barcode')
   handleScanBarcode(
     @ConnectedSocket() client: Socket,
     @MessageBody()
-    data: { sessionCode: string; barcode: string; deviceName?: string },
+    data: { sessionCode?: string; barcode?: string; deviceName?: string },
   ) {
-    const sessionCode = String(data.sessionCode || '')
-      .toUpperCase()
-      .trim();
-    const barcode = String(data.barcode || '').trim();
+    const code = this.normalizeCode(data?.sessionCode);
+    const barcode = String(data?.barcode || '').trim();
+    const mappedCode = this.socketSessionMap.get(client.id);
+    const session = code ? this.sessions.get(code) : undefined;
 
-    if (!sessionCode || !barcode) return;
+    if (!code || !barcode || mappedCode !== code || !session) {
+      return { success: false, error: 'Sesión o código inválido' };
+    }
+    if (session.expiresAt <= Date.now()) {
+      this.sessions.delete(code);
+      return { success: false, error: 'Sesión expirada' };
+    }
+    if (session.phoneSocketId !== client.id) {
+      return { success: false, error: 'Dispositivo no emparejado' };
+    }
 
-    this.logger.log(
-      `⚡ Código [${barcode}] transmitido en sesión [${sessionCode}] por ${data.deviceName || client.id}`,
-    );
-
-    // Retransmitir inmediatamente a todos en la sesión (incluido PC POS)
-    this.server.to(sessionCode).emit('barcode_scanned', {
+    this.server?.to(code).emit('barcode_scanned', {
       barcode,
-      deviceName: data.deviceName || 'Smartphone Inalámbrico',
+      deviceName: data?.deviceName || 'Smartphone Remoto',
       timestamp: Date.now(),
     });
-
-    return { status: 'OK', barcode };
+    return { success: true, status: 'OK', barcode };
   }
 
   @SubscribeMessage('ping_check')
-  handlePing(@MessageBody() data: { timestamp: number }) {
+  handlePing(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { timestamp?: number },
+  ) {
+    this.socketAuth.getUser(client);
     return {
       pong: true,
       clientTimestamp: data?.timestamp || Date.now(),
       serverTimestamp: Date.now(),
     };
+  }
+
+  private normalizeCode(value?: string): string {
+    return String(value || '')
+      .toUpperCase()
+      .trim();
+  }
+
+  private removeSessionForSocket(socketId: string): void {
+    const previousCode = this.socketSessionMap.get(socketId);
+    if (previousCode) this.sessions.delete(previousCode);
+    this.socketSessionMap.delete(socketId);
   }
 }

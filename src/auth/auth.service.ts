@@ -38,15 +38,16 @@ export class AuthService {
   async login(usuario: any) {
     const rolNombre = usuario.roles?.nombre || '';
     const rolUpper = String(rolNombre).toUpperCase();
-    const esAdmin =
-      rolUpper.includes('ADMIN') ||
-      rolUpper.includes('PROPIETARIO') ||
-      rolUpper === 'GERENTE';
+    const esAdminBotica = ['ADMINISTRADOR', 'PROPIETARIO', 'GERENTE'].includes(
+      rolUpper,
+    );
+    const esSuperAdmin = usuario.es_super_admin === true;
 
     // Obtener sucursales asignadas al usuario
     const sucursalesUsuario = await this.prisma.usuario_sucursales.findMany({
       where: {
         usuario_id: usuario.id,
+        botica_id: usuario.botica_id,
         activo: true,
       },
       include: {
@@ -58,14 +59,14 @@ export class AuthService {
       },
     });
 
-    if (sucursalesUsuario.length === 0 && !esAdmin) {
+    if (sucursalesUsuario.length === 0 && !esAdminBotica && !esSuperAdmin) {
       throw new UnauthorizedException('Usuario sin sucursales asignadas');
     }
 
     let sucursalesDisponibles: any[] = [];
-    if (esAdmin) {
+    if (esAdminBotica || esSuperAdmin) {
       const todasSucursales = await this.prisma.sucursales.findMany({
-        where: { deleted_at: null },
+        where: { botica_id: usuario.botica_id, deleted_at: null },
         include: { boticas: true },
         orderBy: { nombre: 'asc' },
       });
@@ -89,31 +90,15 @@ export class AuthService {
       }));
     }
 
-    const principal =
-      sucursalesUsuario.find((s) => s.es_principal) ||
-      (sucursalesDisponibles.length > 0
-        ? {
-            sucursal_id: sucursalesDisponibles[0].id,
-            sucursales: {
-              nombre: sucursalesDisponibles[0].nombre,
-              boticas: { id: sucursalesDisponibles[0].botica_id },
-            },
-          }
-        : null);
+    const principalAsignada = sucursalesUsuario.find((s) => s.es_principal);
+    const sucursalActual =
+      sucursalesDisponibles.find(
+        (s) => s.id === principalAsignada?.sucursal_id,
+      ) || sucursalesDisponibles[0];
 
-    const sucursalActualId =
-      principal?.sucursal_id || sucursalesDisponibles[0]?.id;
-    const sucursalActualNombre =
-      principal?.sucursales?.nombre ||
-      sucursalesDisponibles[0]?.nombre ||
-      'Sucursal Principal';
-    const sucursalActualEmpresa =
-      principal?.sucursales?.boticas?.razon_social ||
-      sucursalesDisponibles[0]?.empresa ||
-      'FarmaPOS';
-    const sucursalActualBoticaId =
-      principal?.sucursales?.boticas?.id ||
-      sucursalesDisponibles[0]?.botica_id;
+    const sucursalActualId = sucursalActual?.id;
+    const sucursalActualNombre = sucursalActual?.nombre || 'Sucursal Principal';
+    const sucursalActualEmpresa = sucursalActual?.empresa || 'FarmaPOS';
 
     // Generar JWT
     const payload = {
@@ -121,8 +106,9 @@ export class AuthService {
       correo: usuario.correo,
       nombre: usuario.nombre,
       rol: usuario.roles?.nombre || 'SIN_ROL',
-      botica_id: sucursalActualBoticaId,
+      botica_id: usuario.botica_id,
       sucursal_id: sucursalActualId,
+      es_super_admin: esSuperAdmin,
     };
 
     return {
@@ -132,6 +118,7 @@ export class AuthService {
         nombre: usuario.nombre,
         correo: usuario.correo,
         rol: usuario.roles?.nombre || 'SIN_ROL',
+        es_super_admin: esSuperAdmin,
       },
       sucursal_actual: {
         id: sucursalActualId,

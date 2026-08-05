@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -12,6 +13,7 @@ import { UpdateProductoDto } from './dto/update-producto.dto';
 import { ProductoDetalleResponse } from './responses/producto-detalle.response';
 import { ProductoListaResponse } from './responses/producto-lista.response';
 import { ProductoMapper } from './mappers/producto.mapper';
+import { Prisma } from '../../generated/prisma/client';
 
 import { RealtimeService } from '../../socket/realtime.service';
 
@@ -28,7 +30,10 @@ export class ProductosService {
    * Obtiene el detalle completo de un producto por su ID.
    * Usa las relaciones de Prisma con includes anidados.
    */
-  async findOne(boticaId: string, id: string): Promise<ProductoDetalleResponse> {
+  async findOne(
+    boticaId: string,
+    id: string,
+  ): Promise<ProductoDetalleResponse> {
     this.logger.log(`Buscando producto por ID: ${id}`);
 
     const producto = await this.prisma.productos_comerciales.findFirst({
@@ -63,6 +68,7 @@ export class ProductosService {
           select: {
             id: true,
             numero_lote: true,
+            fecha_fabricacion: true,
             fecha_vencimiento: true,
             fecha_ingreso: true,
             stock_actual: true,
@@ -84,7 +90,11 @@ export class ProductosService {
    * Lista productos usando la vista optimizada vw_productos_pos.
    * Soporta paginación, búsqueda y filtros.
    */
-  async findAll(boticaId: string, query: QueryProductosDto): Promise<ProductoListaResponse> {
+  async findAll(
+    boticaId: string,
+    query: QueryProductosDto,
+    usuarioId?: string,
+  ): Promise<ProductoListaResponse> {
     const {
       page = 1,
       limit = 20,
@@ -96,12 +106,25 @@ export class ProductosService {
     } = query;
     const offset = (page - 1) * limit;
 
+    if (query.sucursal_id) {
+      if (!usuarioId) {
+        throw new ForbiddenException(
+          'No se pudo validar la sucursal del usuario.',
+        );
+      }
+      await this.resolveSucursalAsignada(
+        boticaId,
+        usuarioId,
+        query.sucursal_id,
+      );
+    }
+
     this.logger.log(`Listando productos - Página: ${page}, Límite: ${limit}`);
 
     // Construimos los filtros dinámicamente
-    const condiciones: string[] = [];
-    const params: any[] = [];
-    let paramIndex = 1;
+    const condiciones: string[] = ['botica_id = $1::uuid'];
+    const params: any[] = [boticaId];
+    let paramIndex = 2;
 
     if (buscar) {
       condiciones.push(`
@@ -139,7 +162,9 @@ export class ProductosService {
     }
 
     const isUuid = (val: string) =>
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        val,
+      );
 
     if (query.sucursal_id && isUuid(query.sucursal_id)) {
       condiciones.push(
@@ -196,14 +221,18 @@ export class ProductosService {
    */
   async create(boticaId: string, dto: CreateProductoDto, usuarioId?: string) {
     if (!boticaId || !usuarioId) {
-      throw new BadRequestException('No se pudo identificar la botica o el usuario que crea el producto.');
+      throw new BadRequestException(
+        'No se pudo identificar la botica o el usuario que crea el producto.',
+      );
     }
 
     // El producto comercial pertenece a la botica; la sucursal se registra al
     // ingresar lotes/stock. Normalizamos antes de validar y persistir.
     dto = {
       ...dto,
-      tipo_producto: String(dto.tipo_producto || 'MEDICAMENTO').trim().toUpperCase(),
+      tipo_producto: String(dto.tipo_producto || 'MEDICAMENTO')
+        .trim()
+        .toUpperCase(),
       nombre_comercial: dto.nombre_comercial?.trim(),
       sku: dto.sku?.trim().toUpperCase(),
       codigo_interno: dto.codigo_interno?.trim() || undefined,
@@ -217,45 +246,115 @@ export class ProductosService {
       })),
     };
     const esMedicamento = dto.tipo_producto === 'MEDICAMENTO';
-    const tiposPermitidos = ['MEDICAMENTO', 'HIGIENE', 'BEBE', 'COSMETICO', 'ACCESORIO', 'OTRO'];
+    const tiposPermitidos = [
+      'MEDICAMENTO',
+      'HIGIENE',
+      'BEBE',
+      'COSMETICO',
+      'ACCESORIO',
+      'OTRO',
+    ];
     if (!tiposPermitidos.includes(dto.tipo_producto!)) {
       throw new BadRequestException('Tipo de producto no válido.');
     }
     const unidadBaseId = dto.unidad_base_id || dto.presentacion_id;
     const presentaciones = dto.presentaciones?.length
       ? dto.presentaciones
-      : [{
-          unidad_presentacion_id: dto.presentacion_id,
-          cantidad_unidad_base: dto.cantidad_unidad_base,
-          precio_actual: dto.precio_actual,
-          codigo_barras: dto.codigo_barras,
-        }];
+      : [
+          {
+            unidad_presentacion_id: dto.presentacion_id,
+            cantidad_unidad_base: dto.cantidad_unidad_base,
+            precio_actual: dto.precio_actual,
+            codigo_barras: dto.codigo_barras,
+          },
+        ];
 
     if (!unidadBaseId) {
-      throw new BadRequestException('Debe seleccionar la unidad base del producto.');
+      throw new BadRequestException(
+        'Debe seleccionar la unidad base del producto.',
+      );
     }
     const base = presentaciones.find(
       (p) => p.unidad_presentacion_id === unidadBaseId,
     );
-    if (!dto.producto_comercial_id && (!base || Number(base.cantidad_unidad_base) !== 1)) {
+    if (
+      !dto.producto_comercial_id &&
+      (!base || Number(base.cantidad_unidad_base) !== 1)
+    ) {
       throw new BadRequestException(
         'La unidad base debe existir entre las presentaciones y equivaler a 1.',
       );
     }
-    if (new Set(presentaciones.map((p) => p.unidad_presentacion_id)).size !== presentaciones.length) {
-      throw new BadRequestException('No se puede repetir una presentación para el mismo producto.');
+    if (
+      new Set(presentaciones.map((p) => p.unidad_presentacion_id)).size !==
+      presentaciones.length
+    ) {
+      throw new BadRequestException(
+        'No se puede repetir una presentación para el mismo producto.',
+      );
     }
 
     const validarReferencias = async (tx: any) => {
-      const [principio, forma, laboratorio, categoria, ...unidades] = await Promise.all([
-        dto.principio_activo_id ? tx.principios_activos.findFirst({ where: { id: dto.principio_activo_id, botica_id: boticaId, deleted_at: null }, select: { id: true } }) : null,
-        dto.forma_farmaceutica_id ? tx.formas_farmaceuticas.findFirst({ where: { id: dto.forma_farmaceutica_id, botica_id: boticaId, deleted_at: null }, select: { id: true } }) : null,
-        dto.laboratorio_id ? tx.laboratorios.findFirst({ where: { id: dto.laboratorio_id, botica_id: boticaId, deleted_at: null }, select: { id: true } }) : null,
-        dto.categoria_id ? tx.categorias.findFirst({ where: { id: dto.categoria_id, botica_id: boticaId, deleted_at: null }, select: { id: true } }) : null,
-        ...[...new Set(presentaciones.map((p) => p.unidad_presentacion_id))].map((id) => tx.unidades_presentacion.findFirst({ where: { id, botica_id: boticaId, deleted_at: null }, select: { id: true } })),
-      ]);
-      if ((esMedicamento && (!principio || !forma)) || !categoria || unidades.some((unidad) => !unidad) || (dto.laboratorio_id && !laboratorio)) {
-        throw new BadRequestException('Uno o más catálogos seleccionados no existen, están inactivos o pertenecen a otra botica.');
+      const [principio, forma, laboratorio, categoria, ...unidades] =
+        await Promise.all([
+          dto.principio_activo_id
+            ? tx.principios_activos.findFirst({
+                where: {
+                  id: dto.principio_activo_id,
+                  botica_id: boticaId,
+                  deleted_at: null,
+                },
+                select: { id: true },
+              })
+            : null,
+          dto.forma_farmaceutica_id
+            ? tx.formas_farmaceuticas.findFirst({
+                where: {
+                  id: dto.forma_farmaceutica_id,
+                  botica_id: boticaId,
+                  deleted_at: null,
+                },
+                select: { id: true },
+              })
+            : null,
+          dto.laboratorio_id
+            ? tx.laboratorios.findFirst({
+                where: {
+                  id: dto.laboratorio_id,
+                  botica_id: boticaId,
+                  deleted_at: null,
+                },
+                select: { id: true },
+              })
+            : null,
+          dto.categoria_id
+            ? tx.categorias.findFirst({
+                where: {
+                  id: dto.categoria_id,
+                  botica_id: boticaId,
+                  deleted_at: null,
+                },
+                select: { id: true },
+              })
+            : null,
+          ...[
+            ...new Set(presentaciones.map((p) => p.unidad_presentacion_id)),
+          ].map((id) =>
+            tx.unidades_presentacion.findFirst({
+              where: { id, botica_id: boticaId, deleted_at: null },
+              select: { id: true },
+            }),
+          ),
+        ]);
+      if (
+        (esMedicamento && (!principio || !forma)) ||
+        !categoria ||
+        unidades.some((unidad) => !unidad) ||
+        (dto.laboratorio_id && !laboratorio)
+      ) {
+        throw new BadRequestException(
+          'Uno o más catálogos seleccionados no existen, están inactivos o pertenecen a otra botica.',
+        );
       }
     };
     // --- CASO 1: AGREGAR PRESENTACION A PRODUCTO EXISTENTE ---
@@ -266,7 +365,11 @@ export class ProductosService {
 
       // A. Verificar existencia del producto comercial
       const prod = await this.prisma.productos_comerciales.findFirst({
-        where: { id: dto.producto_comercial_id, deleted_at: null, botica_id: boticaId },
+        where: {
+          id: dto.producto_comercial_id,
+          deleted_at: null,
+          botica_id: boticaId,
+        },
       });
       if (!prod) {
         throw new NotFoundException(
@@ -280,6 +383,7 @@ export class ProductosService {
           where: {
             producto_comercial_id: dto.producto_comercial_id,
             unidad_presentacion_id: dto.presentacion_id,
+            botica_id: boticaId,
             deleted_at: null,
           },
         });
@@ -293,7 +397,11 @@ export class ProductosService {
       if (dto.codigo_barras) {
         const barrasExistente =
           await this.prisma.productos_presentaciones.findFirst({
-            where: { codigo_barras: dto.codigo_barras, deleted_at: null },
+            where: {
+              codigo_barras: dto.codigo_barras,
+              botica_id: boticaId,
+              deleted_at: null,
+            },
           });
         if (barrasExistente) {
           throw new BadRequestException(
@@ -322,11 +430,13 @@ export class ProductosService {
         [dto.producto_comercial_id, presentacion.id],
       );
 
-      return rows?.length ? ProductoMapper.toListaItem(rows[0]) : {
-        producto_comercial_id: dto.producto_comercial_id,
-        presentacion_id: presentacion.id,
-        mensaje: 'Presentación registrada correctamente.',
-      };
+      return rows?.length
+        ? ProductoMapper.toListaItem(rows[0])
+        : {
+            producto_comercial_id: dto.producto_comercial_id,
+            presentacion_id: presentacion.id,
+            mensaje: 'Presentación registrada correctamente.',
+          };
     }
 
     // --- CASO 2: CREAR PRODUCTO NUEVO ---
@@ -347,19 +457,22 @@ export class ProductosService {
         'Faltan campos obligatorios para registrar un nuevo producto.',
       );
     }
-    if (esMedicamento && (
-      !dto.principio_activo_id ||
-      !dto.forma_farmaceutica_id ||
-      dto.concentracion === undefined ||
-      !dto.unidad_concentracion ||
-      !dto.via_administracion
-    )) {
-      throw new BadRequestException('La ficha farmacéutica requiere principio activo, forma, concentración y vía de administración.');
+    if (
+      esMedicamento &&
+      (!dto.principio_activo_id ||
+        !dto.forma_farmaceutica_id ||
+        dto.concentracion === undefined ||
+        !dto.unidad_concentracion ||
+        !dto.via_administracion)
+    ) {
+      throw new BadRequestException(
+        'La ficha farmacéutica requiere principio activo, forma, concentración y vía de administración.',
+      );
     }
 
     // 1. Validar SKU único en productos comerciales activos
     const skuExistente = await this.prisma.productos_comerciales.findFirst({
-      where: { sku: dto.sku, deleted_at: null },
+      where: { sku: dto.sku, botica_id: boticaId, deleted_at: null },
     });
     if (skuExistente) {
       throw new BadRequestException(`El SKU "${dto.sku}" ya está registrado.`);
@@ -369,7 +482,11 @@ export class ProductosService {
     if (dto.codigo_interno) {
       const internoExistente =
         await this.prisma.productos_comerciales.findFirst({
-          where: { codigo_interno: dto.codigo_interno, deleted_at: null },
+          where: {
+            codigo_interno: dto.codigo_interno,
+            botica_id: boticaId,
+            deleted_at: null,
+          },
         });
       if (internoExistente) {
         throw new BadRequestException(
@@ -382,7 +499,11 @@ export class ProductosService {
     for (const pres of presentaciones.filter((p) => p.codigo_barras)) {
       const barrasExistente =
         await this.prisma.productos_presentaciones.findFirst({
-          where: { codigo_barras: pres.codigo_barras, deleted_at: null },
+          where: {
+            codigo_barras: pres.codigo_barras,
+            botica_id: boticaId,
+            deleted_at: null,
+          },
         });
       if (barrasExistente) {
         throw new BadRequestException(
@@ -394,6 +515,13 @@ export class ProductosService {
     // 4. Ejecutar creación transaccional
     const result = await this.prisma.$transaction(async (tx) => {
       await validarReferencias(tx);
+
+      // Generar código interno seguro si no se proporcionó uno manualmente.
+      let codigoInternoFinal = dto.codigo_interno;
+      if (!codigoInternoFinal) {
+        codigoInternoFinal = await this.generarCodigoInterno(tx, boticaId);
+      }
+
       // A. La ficha farmacéutica existe únicamente para medicamentos.
       let medicamento: any = null;
       if (esMedicamento) {
@@ -424,49 +552,56 @@ export class ProductosService {
         }
       }
 
-// B. Crear Producto Comercial
-       const productoComercial = await tx.productos_comerciales.create({
-         data: {
-           botica_id: boticaId,
-           nombre_comercial: dto.nombre_comercial!,
-           sku: dto.sku!,
-           codigo_interno: dto.codigo_interno || null,
-           registro_sanitario: dto.registro_sanitario || null,
-           medicamento_id: medicamento?.id || null,
-           laboratorio_id: dto.laboratorio_id || null,
-           categoria_id: dto.categoria_id!,
-           unidad_base_id: unidadBaseId,
-           tipo_producto: dto.tipo_producto,
-           controla_lote: dto.controla_lote ?? true,
-           requiere_vencimiento: dto.requiere_vencimiento ?? esMedicamento,
-           atributos: dto.atributos || null,
-           estado: 'ACTIVO',
-           created_by: usuarioId,
-         },
-       });
+      // B. Crear Producto Comercial
+      const productoComercial = await tx.productos_comerciales.create({
+        data: {
+          botica_id: boticaId,
+          nombre_comercial: dto.nombre_comercial!,
+          sku: dto.sku!,
+          codigo_interno: codigoInternoFinal || null,
+          registro_sanitario: dto.registro_sanitario || null,
+          medicamento_id: medicamento?.id || null,
+          laboratorio_id: dto.laboratorio_id || null,
+          categoria_id: dto.categoria_id!,
+          unidad_base_id: unidadBaseId,
+          tipo_producto: dto.tipo_producto,
+          controla_lote: dto.controla_lote ?? true,
+          requiere_vencimiento: dto.requiere_vencimiento ?? esMedicamento,
+          atributos: dto.atributos ?? undefined,
+          estado: 'ACTIVO',
+          created_by: usuarioId,
+        },
+      });
 
       // C. Crear presentaciones individualmente para conservar el ID real de
       // la fila. La vista POS usa pp.id, no unidad_presentacion_id.
-      const presentacionesCreadas = [];
+      const presentacionesCreadas: Array<{
+        id: string;
+        unidad_presentacion_id: string;
+      }> = [];
       for (const [index, pres] of presentaciones.entries()) {
-        presentacionesCreadas.push(await tx.productos_presentaciones.create({
-          data: {
-          botica_id: boticaId,
-          producto_comercial_id: productoComercial.id,
-          unidad_presentacion_id: pres.unidad_presentacion_id,
-          cantidad_unidad_base: Number(pres.cantidad_unidad_base),
-          codigo_barras: pres.codigo_barras?.trim() || null,
-          precio_actual: Number(pres.precio_actual),
-          orden: index + 1,
-          created_by: usuarioId,
-        },
-        }));
+        presentacionesCreadas.push(
+          await tx.productos_presentaciones.create({
+            data: {
+              botica_id: boticaId,
+              producto_comercial_id: productoComercial.id,
+              unidad_presentacion_id: pres.unidad_presentacion_id,
+              cantidad_unidad_base: Number(pres.cantidad_unidad_base),
+              codigo_barras: pres.codigo_barras?.trim() || null,
+              precio_actual: Number(pres.precio_actual),
+              orden: index + 1,
+              created_by: usuarioId,
+            },
+          }),
+        );
       }
       const presentacionBase = presentacionesCreadas.find(
-        (pres: any) => pres.unidad_presentacion_id === unidadBaseId,
+        (pres) => pres.unidad_presentacion_id === unidadBaseId,
       );
       if (!presentacionBase) {
-        throw new BadRequestException('No se pudo crear la presentación base del producto.');
+        throw new BadRequestException(
+          'No se pudo crear la presentación base del producto.',
+        );
       }
 
       return {
@@ -484,11 +619,14 @@ export class ProductosService {
     // La creación ya fue confirmada por la transacción. Nunca reportamos un
     // 404 después de guardar: ante una vista desactualizada devolvemos IDs
     // válidos para que el frontend recargue el listado.
-    return rows?.length ? ProductoMapper.toListaItem(rows[0]) : {
-      producto_comercial_id: result.productoComercialId,
-      presentacion_id: result.presentacionId,
-      mensaje: 'Producto creado correctamente. Actualiza el listado para visualizarlo.',
-    };
+    return rows?.length
+      ? ProductoMapper.toListaItem(rows[0])
+      : {
+          producto_comercial_id: result.productoComercialId,
+          presentacion_id: result.presentacionId,
+          mensaje:
+            'Producto creado correctamente. Actualiza el listado para visualizarlo.',
+        };
   }
 
   /**
@@ -536,7 +674,8 @@ export class ProductosService {
         principio_activo_id:
           pres.productos_comerciales.medicamentos?.principio_activo_id || null,
         forma_farmaceutica_id:
-          pres.productos_comerciales.medicamentos?.forma_farmaceutica_id || null,
+          pres.productos_comerciales.medicamentos?.forma_farmaceutica_id ||
+          null,
         laboratorio_id: pres.productos_comerciales.laboratorio_id,
         categoria_id: pres.productos_comerciales.categoria_id,
         concentracion: Number(
@@ -585,10 +724,10 @@ export class ProductosService {
         laboratorio_id: prod.laboratorio_id,
         categoria_id: prod.categoria_id,
         concentracion: Number(prod.medicamentos?.concentracion || 0),
-        unidad_concentracion: prod.medicamentos.unidad_concentracion,
-        via_administracion: prod.medicamentos.via_administracion,
-        requiere_receta: prod.medicamentos.requiere_receta,
-        afecto_igv: prod.medicamentos.afecto_igv,
+        unidad_concentracion: prod.medicamentos?.unidad_concentracion || null,
+        via_administracion: prod.medicamentos?.via_administracion || null,
+        requiere_receta: prod.medicamentos?.requiere_receta || false,
+        afecto_igv: prod.medicamentos?.afecto_igv ?? true,
       };
     }
 
@@ -619,6 +758,7 @@ export class ProductosService {
         await this.prisma.productos_presentaciones.findFirst({
           where: {
             codigo_barras: dto.codigo_barras,
+            botica_id: boticaId,
             deleted_at: null,
             NOT: { producto_comercial_id: id }, // Permitir el mismo producto
           },
@@ -647,10 +787,14 @@ export class ProductosService {
         if (dto.registro_sanitario !== undefined)
           updateProdComercial.registro_sanitario =
             dto.registro_sanitario || null;
-        if (dto.tipo_producto !== undefined) updateProdComercial.tipo_producto = dto.tipo_producto;
-        if (dto.atributos !== undefined) updateProdComercial.atributos = dto.atributos || null;
-        if (dto.controla_lote !== undefined) updateProdComercial.controla_lote = dto.controla_lote;
-        if (dto.requiere_vencimiento !== undefined) updateProdComercial.requiere_vencimiento = dto.requiere_vencimiento;
+        if (dto.tipo_producto !== undefined)
+          updateProdComercial.tipo_producto = dto.tipo_producto;
+        if (dto.atributos !== undefined)
+          updateProdComercial.atributos = dto.atributos || null;
+        if (dto.controla_lote !== undefined)
+          updateProdComercial.controla_lote = dto.controla_lote;
+        if (dto.requiere_vencimiento !== undefined)
+          updateProdComercial.requiere_vencimiento = dto.requiere_vencimiento;
 
         await tx.productos_comerciales.update({
           where: { id },
@@ -659,7 +803,10 @@ export class ProductosService {
       }
 
       // B. Si se envían flags del medicamento, actualizar el medicamento correspondiente
-      if ((dto.requiere_receta !== undefined || dto.afecto_igv !== undefined) && productoComercial.medicamento_id) {
+      if (
+        (dto.requiere_receta !== undefined || dto.afecto_igv !== undefined) &&
+        productoComercial.medicamento_id
+      ) {
         const updateData: any = {};
         if (dto.requiere_receta !== undefined)
           updateData.requiere_receta = dto.requiere_receta;
@@ -771,35 +918,113 @@ export class ProductosService {
   }
 
   /**
+   * Genera un código interno secuencial seguro usando una tabla de correlativos.
+   * El UPSERT atómico de PostgreSQL garantiza que no se generen duplicados
+   * bajo solicitudes concurrentes para el mismo tenant.
+   */
+  private async generarCodigoInterno(
+    tx: Prisma.TransactionClient,
+    boticaId: string,
+  ): Promise<string> {
+    const correlativo = await tx.correlativos.upsert({
+      where: { botica_id_tipo: { botica_id: boticaId, tipo: 'PRODUCTO' } },
+      update: { ultimo_numero: { increment: 1 } },
+      create: { botica_id: boticaId, tipo: 'PRODUCTO', ultimo_numero: 1 },
+      select: { ultimo_numero: true },
+    });
+    return `PRD-${String(correlativo.ultimo_numero).padStart(6, '0')}`;
+  }
+
+  private async resolveSucursalAsignada(
+    boticaId: string,
+    usuarioId: string,
+    sucursalSolicitada?: string,
+  ): Promise<string> {
+    const asignacion = await this.prisma.usuario_sucursales.findFirst({
+      where: {
+        usuario_id: usuarioId,
+        botica_id: boticaId,
+        activo: true,
+        ...(sucursalSolicitada ? { sucursal_id: sucursalSolicitada } : {}),
+        sucursales: { botica_id: boticaId, deleted_at: null },
+      },
+      orderBy: [{ es_principal: 'desc' }, { created_at: 'asc' }],
+      select: { sucursal_id: true },
+    });
+
+    if (!asignacion) {
+      throw new ForbiddenException(
+        sucursalSolicitada
+          ? 'La sucursal no está asignada al usuario autenticado.'
+          : 'El usuario no tiene una sucursal activa asignada.',
+      );
+    }
+    return asignacion.sucursal_id;
+  }
+
+  private async transactionWithRetry<T>(
+    operation: (tx: any) => Promise<T>,
+  ): Promise<T> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await this.prisma.$transaction(operation, {
+          isolationLevel: 'Serializable' as any,
+        });
+      } catch (error: any) {
+        const retryable = error?.code === 'P2034' || error?.code === 'P2002';
+        if (!retryable || attempt === 2) throw error;
+      }
+    }
+    throw new BadRequestException(
+      'No se pudo completar la operación concurrente.',
+    );
+  }
+
+  /**
    * Reabastecimiento masivo de stock para un producto comercial (+500 unidades base)
    */
-  async reabastecerStock(boticaId: string, dto: {
-    producto_comercial_id: string;
-    sucursal_id?: string;
-    numero_lote: string;
-    fecha_vencimiento?: string;
-    stock_adicional: number;
-    precio_compra_base: number;
-  }, usuarioId: string) {
-    const numeroLote = dto.numero_lote?.trim().toUpperCase() || '';
-    this.logger.log(
-      `Reabasteciendo ${dto.stock_adicional} unidades para el producto: ${dto.producto_comercial_id}`,
-    );
-
-    let sucursalId = dto.sucursal_id;
-    if (!sucursalId || sucursalId === 'undefined' || sucursalId === 'null') {
-      const sucursal = await this.prisma.sucursales.findFirst({
-        where: { deleted_at: null, botica_id: boticaId },
-      });
-      if (!sucursal)
-        throw new BadRequestException(
-          'No hay ninguna sucursal activa en el sistema.',
-        );
-      sucursalId = sucursal.id;
+  async reabastecerStock(
+    boticaId: string,
+    dto: {
+      producto_comercial_id: string;
+      sucursal_id?: string;
+      numero_lote: string;
+      fecha_vencimiento?: string;
+      stock_adicional: number;
+      precio_compra_base: number;
+    },
+    usuarioId: string,
+  ) {
+    const cantidad = Number(dto.stock_adicional);
+    const precioCompra = Number(dto.precio_compra_base);
+    if (!Number.isInteger(cantidad) || cantidad <= 0) {
+      throw new BadRequestException(
+        'El stock adicional debe ser un entero mayor a cero.',
+      );
+    }
+    if (!Number.isFinite(precioCompra) || precioCompra < 0) {
+      throw new BadRequestException(
+        'El precio de compra no puede ser negativo.',
+      );
+    }
+    if (!usuarioId) {
+      throw new BadRequestException(
+        'No se pudo identificar al usuario que registra el ingreso.',
+      );
     }
 
+    const sucursalId = await this.resolveSucursalAsignada(
+      boticaId,
+      usuarioId,
+      dto.sucursal_id,
+    );
+
     const producto = await this.prisma.productos_comerciales.findFirst({
-      where: { id: dto.producto_comercial_id, deleted_at: null, botica_id: boticaId },
+      where: {
+        id: dto.producto_comercial_id,
+        deleted_at: null,
+        botica_id: boticaId,
+      },
     });
     if (!producto) {
       throw new NotFoundException(
@@ -807,160 +1032,177 @@ export class ProductosService {
       );
     }
 
-    const requiereVencimiento = producto.requiere_vencimiento;
-    let vencimientoSolicitado: Date | null = null;
-    if (requiereVencimiento) {
-      if (!dto.fecha_vencimiento) {
-        throw new BadRequestException('La fecha de vencimiento es obligatoria para este producto.');
-      }
-      const [anioVencimiento, mesVencimiento, diaVencimiento] = dto.fecha_vencimiento
-        .slice(0, 10)
-        .split('-')
-        .map(Number);
-      vencimientoSolicitado = new Date(anioVencimiento, mesVencimiento - 1, diaVencimiento);
-      const hoy = new Date();
-      hoy.setHours(0, 0, 0, 0);
-      if (Number.isNaN(vencimientoSolicitado.getTime()) || vencimientoSolicitado < hoy) {
-        throw new BadRequestException('No se puede ingresar stock con una fecha de vencimiento pasada.');
-      }
+    const numeroLote = producto.controla_lote
+      ? dto.numero_lote?.trim().toUpperCase()
+      : dto.numero_lote?.trim().toUpperCase() || 'SIN-LOTE';
+    if (!numeroLote) {
+      throw new BadRequestException(
+        'El número de lote es obligatorio para este producto.',
+      );
     }
 
-    if (!usuarioId) {
-      throw new BadRequestException('No se pudo identificar al usuario que registra el ingreso.');
+    let vencimientoSolicitado: Date | null = null;
+    if (producto.requiere_vencimiento) {
+      if (!dto.fecha_vencimiento) {
+        throw new BadRequestException(
+          'La fecha de vencimiento es obligatoria para este producto.',
+        );
+      }
+      const [anioVencimiento, mesVencimiento, diaVencimiento] =
+        dto.fecha_vencimiento.slice(0, 10).split('-').map(Number);
+      vencimientoSolicitado = new Date(
+        anioVencimiento,
+        mesVencimiento - 1,
+        diaVencimiento,
+      );
+      const hoy = new Date();
+      hoy.setHours(0, 0, 0, 0);
+      if (
+        Number.isNaN(vencimientoSolicitado.getTime()) ||
+        vencimientoSolicitado < hoy
+      ) {
+        throw new BadRequestException(
+          'No se puede ingresar stock con una fecha de vencimiento pasada.',
+        );
+      }
     }
 
     // El código incluye la botica porque el esquema actual tiene unicidad global para códigos.
     // Así cada botica conserva su propio tipo de movimiento y su historial queda aislado.
     const codigoTipoIngreso = `INGRESO_${boticaId.replace(/-/g, '').slice(0, 12)}`;
-    let tipoIngreso = await this.prisma.tipos_movimientos_inventario.findFirst({
-      where: { botica_id: boticaId, codigo: codigoTipoIngreso, deleted_at: null },
-    });
-    if (!tipoIngreso) {
-      tipoIngreso = await this.prisma.tipos_movimientos_inventario.create({
-        data: {
+    const resultado = await this.transactionWithRetry(async (tx) => {
+      let tipoIngreso = await tx.tipos_movimientos_inventario.findFirst({
+        where: {
           botica_id: boticaId,
           codigo: codigoTipoIngreso,
-          descripcion: 'Ingreso manual de lote',
-          afecta_stock: 1,
-          created_by: usuarioId,
+          deleted_at: null,
         },
       });
-    }
-
-    const registrarIngreso = async (loteId: string, stockAnterior: number, stockNuevo: number) => {
-      return this.prisma.movimientos_inventario.create({
-        data: {
-          lote_id: loteId,
-          botica_id: boticaId,
-          tipo_movimiento_id: tipoIngreso.id,
-          usuario_id: usuarioId,
-          cantidad: Number(dto.stock_adicional),
-          stock_anterior: stockAnterior,
-          stock_nuevo: stockNuevo,
-          documento_referencia: numeroLote || 'SIN-LOTE',
-          observacion: `Ingreso manual del ${producto.controla_lote ? `lote ${numeroLote}` : 'producto sin control de lote'}`,
-          created_by: usuarioId,
-        },
-      });
-    };
-
-    const registrarInversionInventario = async (movimientoId: string) => {
-      // Cada ingreso manual es una salida real de dinero para adquirir mercadería.
-      // Queda registrado para que la meta de recuperación no dependa de valores fijos.
-      await this.prisma.gastos_operativos.create({
-        data: {
-          botica_id: boticaId,
-          sucursal_id: sucursalId,
-          tipo: 'INVERSION',
-          categoria: 'COMPRA_INVENTARIO',
-          descripcion: `Compra de inventario: ${producto.controla_lote ? `lote ${numeroLote}` : 'producto sin lote'}`,
-          monto: Number(dto.stock_adicional) * Number(dto.precio_compra_base),
-          comprobante: `MOV-${movimientoId}`,
-        },
-      });
-    };
-
-    const loteExistente = await this.prisma.lotes.findFirst({
-      where: {
-        producto_comercial_id: dto.producto_comercial_id,
-        sucursal_id: sucursalId,
-        botica_id: boticaId,
-        numero_lote: numeroLote,
-        deleted_at: null,
-      },
-    });
-
-    if (loteExistente) {
-      if (
-        loteExistente.fecha_vencimiento?.toISOString().slice(0, 10) !==
-        vencimientoSolicitado?.toISOString().slice(0, 10)
-      ) {
-        throw new BadRequestException(
-          `El lote ${numeroLote} ya existe y tiene una fecha de vencimiento distinta. No se puede mezclar con otro vencimiento.`,
-        );
+      if (!tipoIngreso) {
+        tipoIngreso = await tx.tipos_movimientos_inventario.create({
+          data: {
+            botica_id: boticaId,
+            codigo: codigoTipoIngreso,
+            descripcion: 'Ingreso manual de lote',
+            afecta_stock: 1,
+            created_by: usuarioId,
+          },
+        });
       }
-      const loteActualizado = await this.prisma.lotes.update({
-        where: { id: loteExistente.id },
-        data: {
-          stock_actual:
-            loteExistente.stock_actual + Number(dto.stock_adicional),
-          precio_compra_unidad_base:
-            dto.precio_compra_base || loteExistente.precio_compra_unidad_base,
-          updated_by: usuarioId,
-        },
-      });
-      const movimiento = await registrarIngreso(
-        loteActualizado.id,
-        loteExistente.stock_actual,
-        loteActualizado.stock_actual,
-      );
-      await registrarInversionInventario(movimiento.id);
-      // Realtime broadcast
-      this.realtimeService.notificarStockActualizado(sucursalId, dto.producto_comercial_id, loteActualizado.stock_actual);
-      this.realtimeService.notificarGeneral({
-        titulo: 'Reabastecimiento de Stock',
-        mensaje: `Stock incrementado en +${dto.stock_adicional} unidades para el lote ${numeroLote}`,
-        tipo: 'SUCCESS',
-        sucursalId,
-      });
 
-      return {
-        exito: true,
-        mensaje: `Stock incrementado exitosamente en +${dto.stock_adicional} unidades para el lote ${numeroLote}`,
-        lote: loteActualizado,
+      const registrarIngreso = async (
+        loteId: string,
+        stockAnterior: number,
+        stockNuevo: number,
+      ) => {
+        return tx.movimientos_inventario.create({
+          data: {
+            lote_id: loteId,
+            botica_id: boticaId,
+            tipo_movimiento_id: tipoIngreso.id,
+            usuario_id: usuarioId,
+            cantidad,
+            stock_anterior: stockAnterior,
+            stock_nuevo: stockNuevo,
+            documento_referencia: numeroLote || 'SIN-LOTE',
+            observacion: `Ingreso manual del ${producto.controla_lote ? `lote ${numeroLote}` : 'producto sin control de lote'}`,
+            created_by: usuarioId,
+          },
+        });
       };
-    } else {
-      const nuevoLote = await this.prisma.lotes.create({
-        data: {
-          botica_id: boticaId,
+
+      const registrarInversionInventario = async (movimientoId: string) => {
+        // Cada ingreso manual es una salida real de dinero para adquirir mercadería.
+        // Queda registrado para que la meta de recuperación no dependa de valores fijos.
+        await tx.gastos_operativos.create({
+          data: {
+            botica_id: boticaId,
+            sucursal_id: sucursalId,
+            tipo: 'INVERSION',
+            categoria: 'COMPRA_INVENTARIO',
+            descripcion: `Compra de inventario: ${producto.controla_lote ? `lote ${numeroLote}` : 'producto sin lote'}`,
+            monto: cantidad * precioCompra,
+            comprobante: `MOV-${movimientoId}`,
+          },
+        });
+      };
+
+      const loteExistente = await tx.lotes.findFirst({
+        where: {
           producto_comercial_id: dto.producto_comercial_id,
           sucursal_id: sucursalId,
-          numero_lote:
-            numeroLote || `SIN-LOTE-${Date.now().toString().slice(-6)}`,
-          fecha_vencimiento: vencimientoSolicitado,
-          precio_compra_unidad_base: dto.precio_compra_base || 0,
-          stock_actual: Number(dto.stock_adicional),
-          created_by: usuarioId,
+          botica_id: boticaId,
+          numero_lote: numeroLote,
+          deleted_at: null,
         },
       });
-      const movimiento = await registrarIngreso(nuevoLote.id, 0, nuevoLote.stock_actual);
+
+      let lote: any;
+      let creado = false;
+      if (loteExistente) {
+        if (
+          loteExistente.fecha_vencimiento?.toISOString().slice(0, 10) !==
+          vencimientoSolicitado?.toISOString().slice(0, 10)
+        ) {
+          throw new BadRequestException(
+            `El lote ${numeroLote} ya existe y tiene una fecha de vencimiento distinta.`,
+          );
+        }
+        lote = await tx.lotes.update({
+          where: { id: loteExistente.id },
+          data: {
+            stock_actual: { increment: cantidad },
+            precio_compra_unidad_base: precioCompra,
+            updated_by: usuarioId,
+          },
+        });
+      } else {
+        creado = true;
+        lote = await tx.lotes.create({
+          data: {
+            botica_id: boticaId,
+            producto_comercial_id: dto.producto_comercial_id,
+            sucursal_id: sucursalId,
+            numero_lote: numeroLote,
+            fecha_vencimiento: vencimientoSolicitado,
+            precio_compra_unidad_base: precioCompra,
+            stock_actual: cantidad,
+            created_by: usuarioId,
+          },
+        });
+      }
+
+      const stockAnterior = Number(lote.stock_actual) - cantidad;
+      const movimiento = await registrarIngreso(
+        lote.id,
+        stockAnterior,
+        Number(lote.stock_actual),
+      );
       await registrarInversionInventario(movimiento.id);
+      return { lote, creado };
+    });
 
-      // Realtime broadcast
-      this.realtimeService.notificarStockActualizado(sucursalId, dto.producto_comercial_id, nuevoLote.stock_actual);
-      this.realtimeService.notificarGeneral({
-        titulo: 'Nuevo Lote Registrado',
-        mensaje: `Registrado lote ${nuevoLote.numero_lote} con +${dto.stock_adicional} unidades base`,
-        tipo: 'SUCCESS',
-        sucursalId,
-      });
+    this.realtimeService.notificarStockActualizado(
+      sucursalId,
+      dto.producto_comercial_id,
+      Number(resultado.lote.stock_actual),
+    );
+    this.realtimeService.notificarGeneral({
+      titulo: resultado.creado
+        ? 'Nuevo Lote Registrado'
+        : 'Reabastecimiento de Stock',
+      mensaje: `${resultado.creado ? 'Registrado' : 'Actualizado'} lote ${numeroLote} con +${cantidad} unidades base`,
+      tipo: 'SUCCESS',
+      sucursalId,
+    });
 
-      return {
-        exito: true,
-        mensaje: `Nuevo lote ${nuevoLote.numero_lote} registrado con ${dto.stock_adicional} unidades base`,
-        lote: nuevoLote,
-      };
-    }
+    return {
+      exito: true,
+      mensaje: resultado.creado
+        ? `Nuevo lote ${numeroLote} registrado con ${cantidad} unidades base`
+        : `Stock incrementado exitosamente en +${cantidad} unidades para el lote ${numeroLote}`,
+      lote: resultado.lote,
+    };
   }
 
   /**
@@ -990,7 +1232,9 @@ export class ProductosService {
       where: { botica_id: boticaId, deleted_at: null },
     });
     if (unidades.length === 0) {
-      throw new BadRequestException('No hay unidades de presentación configuradas para esta botica.');
+      throw new BadRequestException(
+        'No hay unidades de presentación configuradas para esta botica.',
+      );
     }
     const unidadDefault = unidades[0].id;
 

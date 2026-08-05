@@ -26,7 +26,9 @@ export class PosventaService {
     this.logger.log(`Registrando devolución para venta ${dto.venta_id}`);
 
     if (!dto.items || dto.items.length === 0) {
-      throw new BadRequestException('La devolución debe incluir al menos un producto.');
+      throw new BadRequestException(
+        'La devolución debe incluir al menos un producto.',
+      );
     }
 
     return await this.prisma.$transaction(async (tx) => {
@@ -36,7 +38,9 @@ export class PosventaService {
       });
 
       if (!venta) {
-        throw new NotFoundException(`Venta con ID ${dto.venta_id} no encontrada`);
+        throw new NotFoundException(
+          `Venta con ID ${dto.venta_id} no encontrada`,
+        );
       }
 
       if (venta.estado === 'ANULADO') {
@@ -99,21 +103,27 @@ export class PosventaService {
     this.logger.log(`Registrando cambio para venta ${dto.venta_id}`);
 
     if (!dto.items_devolver || dto.items_devolver.length === 0) {
-      throw new BadRequestException('El cambio debe incluir al menos un producto a devolver.');
+      throw new BadRequestException(
+        'El cambio debe incluir al menos un producto a devolver.',
+      );
     }
 
     if (!dto.items_entregar || dto.items_entregar.length === 0) {
-      throw new BadRequestException('El cambio debe incluir al menos un producto a entregar.');
+      throw new BadRequestException(
+        'El cambio debe incluir al menos un producto a entregar.',
+      );
     }
 
     return await this.prisma.$transaction(async (tx) => {
       const venta = await tx.ventas.findFirst({
         where: { id: dto.venta_id, deleted_at: null, botica_id: boticaId },
-        include: { detalles_ventas: true },
+        include: { detalles_ventas: true, cajas: true },
       });
 
       if (!venta) {
-        throw new NotFoundException(`Venta con ID ${dto.venta_id} no encontrada`);
+        throw new NotFoundException(
+          `Venta con ID ${dto.venta_id} no encontrada`,
+        );
       }
 
       if (venta.estado === 'ANULADO') {
