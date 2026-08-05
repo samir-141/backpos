@@ -52,7 +52,13 @@ const TIPOS_COMPROBANTE: Record<string, string> = {
 };
 
 function fontsPdfmake() {
-  const base = path.join(process.cwd(), 'node_modules', 'pdfmake', 'fonts', 'Roboto');
+  const base = path.join(
+    process.cwd(),
+    'node_modules',
+    'pdfmake',
+    'fonts',
+    'Roboto',
+  );
   return {
     Roboto: {
       normal: path.join(base, 'Roboto-Regular.ttf'),
@@ -298,7 +304,11 @@ export class PdfGeneratorService {
   private async render(doc: TDocumentDefinitions): Promise<Buffer> {
     return new Promise(async (resolve, reject) => {
       try {
-        const printer = new PdfPrinter(fontsPdfmake(), virtualfs, new URLResolver());
+        const printer = new PdfPrinter(
+          fontsPdfmake(),
+          virtualfs,
+          new URLResolver(),
+        );
         const pdfDoc = await printer.createPdfKitDocument(doc);
         const chunks: Buffer[] = [];
         pdfDoc.on('data', (chunk: Buffer) => chunks.push(chunk));

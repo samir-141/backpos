@@ -104,7 +104,7 @@ export class DashboardService {
           (d as any).productos_presentaciones?.cantidad_unidad_base || 1,
         );
 
-        let costoLinea = precioCompraUnitario * d.cantidad * equivBase;
+        const costoLinea = precioCompraUnitario * d.cantidad * equivBase;
         costoTotalCalculado += costoLinea;
         totalItemsVendidosCount += d.cantidad;
 

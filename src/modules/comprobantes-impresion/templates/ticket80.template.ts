@@ -32,7 +32,10 @@ export class Ticket80Template implements ComprobanteTemplate {
 
   private encabezado(data: ComprobantePrintData): Content[] {
     const { emisor, documento, sucursalNombre, sucursalDireccion } = data;
-    const tipoLabel = TIPOS_COMPROBANTE[documento.tipoComprobante] || documento.tipoComprobante || 'NOTA DE VENTA';
+    const tipoLabel =
+      TIPOS_COMPROBANTE[documento.tipoComprobante] ||
+      documento.tipoComprobante ||
+      'NOTA DE VENTA';
 
     return [
       { text: emisor.razonSocial, style: 'razonSocial' },
@@ -118,7 +121,17 @@ export class Ticket80Template implements ComprobanteTemplate {
   }
 
   private pie(data: ComprobantePrintData): Content[] {
-    const { cliente, documento, totales, pagos, montoRecibido, vuelto, hash, qrCode, estado } = data;
+    const {
+      cliente,
+      documento,
+      totales,
+      pagos,
+      montoRecibido,
+      vuelto,
+      hash,
+      qrCode,
+      estado,
+    } = data;
     const contenido: Content[] = [
       {
         text: `Cliente: ${cliente.razonSocial}`,
@@ -133,12 +146,20 @@ export class Ticket80Template implements ComprobanteTemplate {
         text: `F. Emisión: ${documento.fechaEmision.toLocaleString('es-PE')}`,
         style: 'detalle',
       },
-      { text: `SON: ${totales.montoEnLetras}`, style: 'detalle', fontSize: 6.5 },
+      {
+        text: `SON: ${totales.montoEnLetras}`,
+        style: 'detalle',
+        fontSize: 6.5,
+      },
     ];
 
     // Detalle de Pagos
     if (pagos && pagos.length > 0) {
-      contenido.push({ text: 'PAGO:', style: 'seccionTitulo', margin: [0, 4, 0, 1] });
+      contenido.push({
+        text: 'PAGO:',
+        style: 'seccionTitulo',
+        margin: [0, 4, 0, 1],
+      });
       pagos.forEach((p) => {
         contenido.push({
           text: `${p.metodoPago}: S/ ${fmt(p.monto)}${p.referencia ? ` (${p.referencia})` : ''}`,
@@ -153,7 +174,11 @@ export class Ticket80Template implements ComprobanteTemplate {
       }
     }
 
-    if (estado && estado !== 'ACEPTADO' && estado !== 'ACEPTADO_CON_OBSERVACIONES') {
+    if (
+      estado &&
+      estado !== 'ACEPTADO' &&
+      estado !== 'ACEPTADO_CON_OBSERVACIONES'
+    ) {
       contenido.push({
         text: `ESTADO: ${estado} (No válido ante SUNAT)`,
         style: 'estadoAdvertencia',

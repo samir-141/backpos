@@ -30,12 +30,12 @@ export class CatalogosService {
    * Valida que el tipo de catálogo sea soportado
    */
   private validarTipo(tipo: string): TipoCatalogo {
-    if (!TIPOS_CATALOGO.includes(tipo as TipoCatalogo)) {
+    if (!TIPOS_CATALOGO.includes(tipo)) {
       throw new BadRequestException(
         `Tipo de catálogo inválido. Soportados: ${TIPOS_CATALOGO.join(', ')}`,
       );
     }
-    return tipo as TipoCatalogo;
+    return tipo;
   }
 
   /**

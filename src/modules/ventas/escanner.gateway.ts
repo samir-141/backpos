@@ -46,7 +46,8 @@ export class EscannerGateway
         await this.socketAuth.authenticate(client);
         next();
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'No autorizado';
+        const message =
+          error instanceof Error ? error.message : 'No autorizado';
         next(new Error(message));
       }
     });
@@ -54,7 +55,9 @@ export class EscannerGateway
 
   handleConnection(client: Socket): void {
     const user = this.socketAuth.getUser(client);
-    console.log(`[EscannerGateway] Conexión establecida y autenticada para: ${user.nombre} (${client.id})`);
+    console.log(
+      `[EscannerGateway] Conexión establecida y autenticada para: ${user.nombre} (${client.id})`,
+    );
   }
 
   handleDisconnect(client: Socket): void {

@@ -32,7 +32,10 @@ export class A4Template implements ComprobanteTemplate {
 
   private encabezado(data: ComprobantePrintData): Content[] {
     const { emisor, documento, sucursalNombre, sucursalDireccion } = data;
-    const tipoLabel = TIPOS_COMPROBANTE[documento.tipoComprobante] || documento.tipoComprobante || 'NOTA DE VENTA';
+    const tipoLabel =
+      TIPOS_COMPROBANTE[documento.tipoComprobante] ||
+      documento.tipoComprobante ||
+      'NOTA DE VENTA';
 
     return [
       { text: emisor.razonSocial, style: 'razonSocial' },
@@ -118,7 +121,17 @@ export class A4Template implements ComprobanteTemplate {
   }
 
   private pie(data: ComprobantePrintData): Content[] {
-    const { cliente, documento, totales, pagos, montoRecibido, vuelto, hash, qrCode, estado } = data;
+    const {
+      cliente,
+      documento,
+      totales,
+      pagos,
+      montoRecibido,
+      vuelto,
+      hash,
+      qrCode,
+      estado,
+    } = data;
     const contenido: Content[] = [
       {
         text: `Cliente: ${cliente.razonSocial}`,
@@ -134,7 +147,11 @@ export class A4Template implements ComprobanteTemplate {
 
     // Detalle de Pagos
     if (pagos && pagos.length > 0) {
-      contenido.push({ text: 'MÉTODOS DE PAGO:', style: 'seccionTitulo', margin: [0, 8, 0, 2] });
+      contenido.push({
+        text: 'MÉTODOS DE PAGO:',
+        style: 'seccionTitulo',
+        margin: [0, 8, 0, 2],
+      });
       pagos.forEach((p) => {
         contenido.push({
           text: `- ${p.metodoPago}: S/ ${fmt(p.monto)}${p.referencia ? ` (Ref: ${p.referencia})` : ''}`,
@@ -149,7 +166,11 @@ export class A4Template implements ComprobanteTemplate {
       }
     }
 
-    if (estado && estado !== 'ACEPTADO' && estado !== 'ACEPTADO_CON_OBSERVACIONES') {
+    if (
+      estado &&
+      estado !== 'ACEPTADO' &&
+      estado !== 'ACEPTADO_CON_OBSERVACIONES'
+    ) {
       contenido.push({
         text: `ESTADO: ${estado} (No válido como representación oficial de SUNAT)`,
         style: 'estadoAdvertencia',
@@ -163,7 +184,9 @@ export class A4Template implements ComprobanteTemplate {
           { image: qrCode, width: 90 },
           {
             stack: [
-              ...(hash ? [{ text: `Hash: ${hash}`, style: 'hash' } as Content] : []),
+              ...(hash
+                ? [{ text: `Hash: ${hash}`, style: 'hash' } as Content]
+                : []),
               {
                 text: 'Representación impresa del comprobante electrónico. Consulte su validez en www.sunat.gob.pe o escaneando el código QR.',
                 style: 'leyenda',

@@ -24,6 +24,8 @@ import { AdministracionGeneralModule } from './modules/administracion-general/ad
 import { ComprasModule } from './modules/compras/compras.module';
 import { ProveedoresModule } from './modules/proveedores/proveedores.module';
 import { ComprobantesImpresionModule } from './modules/comprobantes-impresion/comprobantes-impresion.module';
+import { PrintingQzModule } from './modules/printing-qz/printing-qz.module';
+import { QzSecurityModule } from './modules/qz-security/qz-security.module';
 
 @Module({
   imports: [
@@ -50,6 +52,8 @@ import { ComprobantesImpresionModule } from './modules/comprobantes-impresion/co
     ComprasModule,
     ProveedoresModule,
     ComprobantesImpresionModule,
+    PrintingQzModule,
+    QzSecurityModule,
   ],
   controllers: [AppController],
   providers: [AppService],

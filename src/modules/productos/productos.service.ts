@@ -205,7 +205,7 @@ export class ProductosService {
     const total = Number(countResult[0]?.total ?? 0);
 
     return {
-      data: (rows as any[]).map(ProductoMapper.toListaItem),
+      data: rows.map(ProductoMapper.toListaItem),
       meta: {
         total,
         page,

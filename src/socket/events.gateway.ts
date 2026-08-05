@@ -27,7 +27,9 @@ export interface UserConnectionInfo {
 @WebSocketGateway({
   cors: createCorsOptions(),
 })
-export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
+export class EventsGateway
+  implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit
+{
   @WebSocketServer()
   server: Server;
 
@@ -42,7 +44,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect, 
         await this.socketAuth.authenticate(client);
         next();
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'No autorizado';
+        const message =
+          error instanceof Error ? error.message : 'No autorizado';
         next(new Error(message));
       }
     });

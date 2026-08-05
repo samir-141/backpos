@@ -42,4 +42,4 @@ export const CATALOGOS_CONFIG: Record<string, CatalogoConfig> = {
 
 export type TipoCatalogo = keyof typeof CATALOGOS_CONFIG;
 
-export const TIPOS_CATALOGO = Object.keys(CATALOGOS_CONFIG) as TipoCatalogo[];
+export const TIPOS_CATALOGO = Object.keys(CATALOGOS_CONFIG);

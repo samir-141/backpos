@@ -128,7 +128,7 @@ describe('PosventaController', () => {
         cambios: [],
         garantias: [],
         reclamos: [],
-      } as any);
+      });
 
       const result = await controller.findByVenta('venta-1', mockReq);
 

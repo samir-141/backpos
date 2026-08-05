@@ -30,8 +30,12 @@ function fixture(options?: { codigoInternoManual?: string }) {
   const correlativosUpsert = jest.fn().mockReturnValue({ ultimo_numero: 1 });
 
   const tx = {
-    categorias: { findFirst: jest.fn().mockResolvedValue({ id: 'categoria-1' }) },
-    unidades_presentacion: { findFirst: jest.fn().mockResolvedValue({ id: 'unidad-1' }) },
+    categorias: {
+      findFirst: jest.fn().mockResolvedValue({ id: 'categoria-1' }),
+    },
+    unidades_presentacion: {
+      findFirst: jest.fn().mockResolvedValue({ id: 'unidad-1' }),
+    },
     correlativos: { upsert: correlativosUpsert },
     productos_comerciales: { create: productoComercialCreate },
     productos_presentaciones: { create: presentacionCreate },

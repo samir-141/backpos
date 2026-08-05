@@ -10,7 +10,10 @@ import * as crypto from 'crypto';
 import { A4Template } from './templates/a4.template';
 import { Ticket80Template } from './templates/ticket80.template';
 import { Ticket58Template } from './templates/ticket58.template';
-import { ComprobantePrintData, ComprobantePagoData } from './interfaces/comprobante-print-data.interface';
+import {
+  ComprobantePrintData,
+  ComprobantePagoData,
+} from './interfaces/comprobante-print-data.interface';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const PdfPrinter = require('pdfmake/js/Printer').default;
@@ -20,7 +23,13 @@ const URLResolver = require('pdfmake/js/URLResolver').default;
 const virtualfs = require('pdfmake/js/virtual-fs').default;
 
 function fontsPdfmake() {
-  const base = path.join(process.cwd(), 'node_modules', 'pdfmake', 'fonts', 'Roboto');
+  const base = path.join(
+    process.cwd(),
+    'node_modules',
+    'pdfmake',
+    'fonts',
+    'Roboto',
+  );
   return {
     Roboto: {
       normal: path.join(base, 'Roboto-Regular.ttf'),
@@ -118,9 +127,13 @@ export class ComprobantesImpresionService implements OnModuleInit {
     }
 
     // 4. Generar URL de verificación y código QR
-    const publicAppUrl = process.env.VITE_PUBLIC_APP_URL || 'https://localhost:5173';
+    const publicAppUrl =
+      process.env.VITE_PUBLIC_APP_URL || 'https://localhost:5173';
     const verifyUrl = `${publicAppUrl}/c/${publicToken}`;
-    const qrCodeBase64 = await QRCode.toDataURL(verifyUrl, { margin: 0, width: 140 });
+    const qrCodeBase64 = await QRCode.toDataURL(verifyUrl, {
+      margin: 0,
+      width: 140,
+    });
 
     // 5. Determinar serie y correlativo
     let serie = 'NV01';
@@ -142,15 +155,19 @@ export class ComprobantesImpresionService implements OnModuleInit {
     }
 
     // 6. Mapear pagos
-    const pagosMapeados: ComprobantePagoData[] = (venta.pagos || []).map((p) => ({
-      monto: Number(p.monto),
-      metodoPago: p.metodos_pago?.nombre || 'EFECTIVO',
-      referencia: p.referencia || undefined,
-    }));
+    const pagosMapeados: ComprobantePagoData[] = (venta.pagos || []).map(
+      (p) => ({
+        monto: Number(p.monto),
+        metodoPago: p.metodos_pago?.nombre || 'EFECTIVO',
+        referencia: p.referencia || undefined,
+      }),
+    );
 
     let montoRecibido: number | undefined;
     let vuelto: number | undefined;
-    const pagoEfectivo = venta.pagos.find((p) => p.metodos_pago?.nombre === 'EFECTIVO');
+    const pagoEfectivo = venta.pagos.find(
+      (p) => p.metodos_pago?.nombre === 'EFECTIVO',
+    );
     if (pagoEfectivo) {
       montoRecibido = Number(pagoEfectivo.monto);
       vuelto = 0;
@@ -207,15 +224,21 @@ export class ComprobantesImpresionService implements OnModuleInit {
       },
       items,
       totales: {
-        totalGravado: Number(compEl?.total_gravado || (Number(venta.subtotal) - Number(venta.igv))),
+        totalGravado: Number(
+          compEl?.total_gravado || Number(venta.subtotal) - Number(venta.igv),
+        ),
         totalExonerado: Number(compEl?.total_exonerado || 0),
         totalInafecto: Number(compEl?.total_inafecto || 0),
         totalGratuito: Number(compEl?.total_gratuito || 0),
-        totalDescuentos: Number(compEl?.total_descuentos || Number(venta.descuento || 0)),
+        totalDescuentos: Number(
+          compEl?.total_descuentos || Number(venta.descuento || 0),
+        ),
         totalIgv: Number(compEl?.total_igv || Number(venta.igv)),
         subtotal: Number(compEl?.subtotal || Number(venta.subtotal)),
         total: Number(compEl?.total || Number(venta.total)),
-        montoEnLetras: numeroALetras(Number(compEl?.total || Number(venta.total))),
+        montoEnLetras: numeroALetras(
+          Number(compEl?.total || Number(venta.total)),
+        ),
       },
       sucursalNombre: venta.cajas?.sucursales?.nombre || '',
       sucursalDireccion: venta.cajas?.sucursales?.direccion || undefined,
@@ -246,13 +269,19 @@ export class ComprobantesImpresionService implements OnModuleInit {
     await fs.promises.writeFile(filePath, pdfBuffer);
 
     // 11. Programar borrado automático del archivo físico a los 5 minutos
-    setTimeout(() => {
-      fs.unlink(filePath, (err) => {
-        if (err && err.code !== 'ENOENT') {
-          console.error(`Error al eliminar archivo PDF temporal ${filename}:`, err);
-        }
-      });
-    }, 5 * 60 * 1000);
+    setTimeout(
+      () => {
+        fs.unlink(filePath, (err) => {
+          if (err && err.code !== 'ENOENT') {
+            console.error(
+              `Error al eliminar archivo PDF temporal ${filename}:`,
+              err,
+            );
+          }
+        });
+      },
+      5 * 60 * 1000,
+    );
 
     return filename;
   }
@@ -260,7 +289,11 @@ export class ComprobantesImpresionService implements OnModuleInit {
   private async renderPdf(docDef: any): Promise<Buffer> {
     return new Promise(async (resolve, reject) => {
       try {
-        const printer = new PdfPrinter(fontsPdfmake(), virtualfs, new URLResolver());
+        const printer = new PdfPrinter(
+          fontsPdfmake(),
+          virtualfs,
+          new URLResolver(),
+        );
         const pdfDoc = await printer.createPdfKitDocument(docDef);
         const chunks: Buffer[] = [];
         pdfDoc.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -278,7 +311,9 @@ export class ComprobantesImpresionService implements OnModuleInit {
     try {
       return await fs.promises.readFile(filePath);
     } catch (err) {
-      throw new NotFoundException('El archivo de impresión temporal ya no está disponible o ha expirado');
+      throw new NotFoundException(
+        'El archivo de impresión temporal ya no está disponible o ha expirado',
+      );
     }
   }
 }
