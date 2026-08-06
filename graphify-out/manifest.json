@@ -935,9 +935,9 @@
     "semantic_hash": "cc71f954d48dcc6fa839a41fa6f0b161"
   },
   "src/modules/usuarios/usuarios.controller.ts": {
-    "mtime": 1785566742.9496863,
-    "ast_hash": "d6778c493e2d387a9eea49070d74c948",
-    "semantic_hash": "d6778c493e2d387a9eea49070d74c948"
+    "mtime": 1785942709.8821237,
+    "ast_hash": "f6f3d9185ce8d575ff5a0acb0af1dd8c",
+    "semantic_hash": ""
   },
   "src/modules/usuarios/usuarios.module.ts": {
     "mtime": 1785268321.3014116,
@@ -945,9 +945,9 @@
     "semantic_hash": "429da969a857a1c29e4463e2384b808e"
   },
   "src/modules/usuarios/usuarios.service.ts": {
-    "mtime": 1785566742.9184387,
-    "ast_hash": "248efda02a0f6288329fa4ee4df39da6",
-    "semantic_hash": "248efda02a0f6288329fa4ee4df39da6"
+    "mtime": 1785942718.3434198,
+    "ast_hash": "1feb65f6690b428aeabc6b46231bdf6d",
+    "semantic_hash": ""
   },
   "src/modules/ventas/dto/create-venta.dto.ts": {
     "mtime": 1785562604.8788514,

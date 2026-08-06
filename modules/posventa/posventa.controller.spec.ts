@@ -86,7 +86,7 @@ describe('PosventaController', () => {
       const dto = {
         venta_id: 'venta-1',
         detalle_venta_id: 'detalle-1',
-        tipo: 'CAMBIO',
+        tipo: 'CAMBIO' as const,
         motivo: 'Producto defectuoso',
       };
       service.createGarantia.mockResolvedValue({
@@ -105,7 +105,7 @@ describe('PosventaController', () => {
     it('debería llamar al servicio para crear reclamo', async () => {
       const dto = {
         venta_id: 'venta-1',
-        tipo: 'PRODUCTO',
+        tipo: 'PRODUCTO' as const,
         descripcion: 'Producto en mal estado',
       };
       service.createReclamo.mockResolvedValue({
