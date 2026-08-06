@@ -959,6 +959,7 @@ model ventas {
   updated_by                           String?           @db.Uuid
   deleted_by                           String?           @db.Uuid
   version                              Int               @default(1)
+  idempotency_key                      String?           @db.Uuid
   boticas                              boticas           @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
   detalles_ventas                      detalles_ventas[]
   pagos                                pagos[]

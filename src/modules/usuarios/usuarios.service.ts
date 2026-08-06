@@ -432,4 +432,104 @@ export class UsuariosService {
 
     return { mensaje: 'Permisos actualizados correctamente' };
   }
+
+  async createRol(boticaId: string, nombre: string, userId: string) {
+    const nombreTrimmed = nombre?.trim();
+    if (!nombreTrimmed) {
+      throw new BadRequestException('El nombre del rol es requerido');
+    }
+
+    const existing = await this.prisma.roles.findFirst({
+      where: {
+        botica_id: boticaId,
+        nombre: { equals: nombreTrimmed, mode: 'insensitive' },
+        deleted_at: null,
+      },
+    });
+
+    if (existing) {
+      throw new BadRequestException('Ya existe un rol con ese nombre');
+    }
+
+    return this.prisma.roles.create({
+      data: {
+        botica_id: boticaId,
+        nombre: nombreTrimmed,
+        created_by: userId,
+      },
+    });
+  }
+
+  async updateRol(boticaId: string, id: string, nombre: string, userId: string) {
+    const nombreTrimmed = nombre?.trim();
+    if (!nombreTrimmed) {
+      throw new BadRequestException('El nombre del rol es requerido');
+    }
+
+    const rol = await this.prisma.roles.findFirst({
+      where: { id, botica_id: boticaId, deleted_at: null },
+    });
+
+    if (!rol) {
+      throw new NotFoundException('Rol no encontrado');
+    }
+
+    if (rol.nombre.toUpperCase() === 'ADMINISTRADOR') {
+      throw new BadRequestException('No se puede modificar el rol ADMINISTRADOR');
+    }
+
+    const existing = await this.prisma.roles.findFirst({
+      where: {
+        botica_id: boticaId,
+        nombre: { equals: nombreTrimmed, mode: 'insensitive' },
+        id: { not: id },
+        deleted_at: null,
+      },
+    });
+
+    if (existing) {
+      throw new BadRequestException('Ya existe un rol con ese nombre');
+    }
+
+    return this.prisma.roles.update({
+      where: { id },
+      data: {
+        nombre: nombreTrimmed,
+        updated_by: userId,
+        updated_at: new Date(),
+      },
+    });
+  }
+
+  async deleteRol(boticaId: string, id: string, userId: string) {
+    const rol = await this.prisma.roles.findFirst({
+      where: { id, botica_id: boticaId, deleted_at: null },
+    });
+
+    if (!rol) {
+      throw new NotFoundException('Rol no encontrado');
+    }
+
+    if (rol.nombre.toUpperCase() === 'ADMINISTRADOR') {
+      throw new BadRequestException('No se puede eliminar el rol ADMINISTRADOR');
+    }
+
+    const usersWithRole = await this.prisma.usuarios.findFirst({
+      where: { rol_id: id, botica_id: boticaId, deleted_at: null },
+    });
+
+    if (usersWithRole) {
+      throw new BadRequestException(
+        'No se puede eliminar el rol porque está asignado a usuarios activos',
+      );
+    }
+
+    return this.prisma.roles.update({
+      where: { id },
+      data: {
+        deleted_at: new Date(),
+        deleted_by: userId,
+      },
+    });
+  }
 }

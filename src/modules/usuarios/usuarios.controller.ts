@@ -39,6 +39,35 @@ export class UsuariosController {
     return this.usuariosService.getRoles(req.botica_id);
   }
 
+  @Post('roles')
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRADOR', 'PROPIETARIO')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: 'Crear nuevo rol para la botica' })
+  createRol(@Body() body: { nombre: string }, @Request() req: any) {
+    return this.usuariosService.createRol(req.botica_id, body.nombre, req.user.id);
+  }
+
+  @Patch('roles/:id')
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRADOR', 'PROPIETARIO')
+  @ApiOperation({ summary: 'Actualizar nombre de rol' })
+  updateRol(
+    @Param('id') id: string,
+    @Body() body: { nombre: string },
+    @Request() req: any,
+  ) {
+    return this.usuariosService.updateRol(req.botica_id, id, body.nombre, req.user.id);
+  }
+
+  @Delete('roles/:id')
+  @UseGuards(RolesGuard)
+  @Roles('ADMINISTRADOR', 'PROPIETARIO')
+  @ApiOperation({ summary: 'Eliminar un rol (soft delete)' })
+  deleteRol(@Param('id') id: string, @Request() req: any) {
+    return this.usuariosService.deleteRol(req.botica_id, id, req.user.id);
+  }
+
   @Put('roles/:rolId/permisos')
   @UseGuards(RolesGuard)
   @Roles('ADMINISTRADOR', 'PROPIETARIO')
