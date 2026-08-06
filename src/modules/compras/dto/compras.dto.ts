@@ -53,8 +53,9 @@ export class CreateCompraDetalleDto {
 }
 
 export class CreateCompraDto {
+  @IsOptional()
   @IsUUID()
-  proveedor_id: string;
+  proveedor_id?: string;
 
   @IsOptional()
   @IsUUID()

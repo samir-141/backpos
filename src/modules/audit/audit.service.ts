@@ -36,10 +36,17 @@ export class AuditService {
 
     this.logger.log(`[AUDIT] ${textoObs}`);
 
+    if (!botica_id) {
+      this.logger.warn(
+        '[AUDIT] No se registró log de auditoría: botica_id no proporcionado',
+      );
+      return;
+    }
+
     try {
       await this.prisma.migracion_log.create({
         data: {
-          botica_id: botica_id || '00000000-0000-0000-0000-000000000000',
+          botica_id,
           tabla: tabla.substring(0, 100),
           operacion: accion.substring(0, 50),
           registros_afectados,

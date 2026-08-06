@@ -5,6 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { consultarPadron } from '../../common/integrations/padron.client';
 import { CreateClienteDto } from './dto/create-cliente.dto';
 import { UpdateClienteDto } from './dto/update-cliente.dto';
 import { QueryClientesDto } from './dto/query-clientes.dto';
@@ -191,11 +192,9 @@ export class ClientesService {
     // 2. Consulta Externa si es DNI (8 dígitos) o RUC (11 dígitos)
     try {
       if (tipoDoc === 'DNI' && numDoc.length === 8) {
-        const response = await fetch(
-          `https://api.apis.net.pe/v1/dni?numero=${numDoc}`,
-        );
-        if (response.ok) {
-          const data = await response.json();
+        const result = await consultarPadron('DNI', numDoc);
+        if (result.ok && result.data) {
+          const data = result.data as Record<string, string | undefined>;
           const nombreCompleto =
             data.nombre ||
             `${data.nombres || ''} ${data.apellidoPaterno || ''} ${data.apellidoMaterno || ''}`.trim();
@@ -213,11 +212,9 @@ export class ClientesService {
           }
         }
       } else if (tipoDoc === 'RUC' && numDoc.length === 11) {
-        const response = await fetch(
-          `https://api.apis.net.pe/v1/ruc?numero=${numDoc}`,
-        );
-        if (response.ok) {
-          const data = await response.json();
+        const result = await consultarPadron('RUC', numDoc);
+        if (result.ok && result.data) {
+          const data = result.data as Record<string, string | undefined>;
           const razonSocial = data.nombre || data.razonSocial;
           if (razonSocial) {
             return {

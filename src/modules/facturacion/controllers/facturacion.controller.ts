@@ -13,21 +13,23 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import type { Response } from 'express';
 import type { RequestAutenticada } from '../../../auth/interfaces/request-autenticada.interface';
 import { FacturacionService } from '../services/facturacion.service';
 import { EmitirComprobanteDto } from '../dtos/emitir-comprobante.dto';
 import { TenantGuard } from '../../../auth/guards/tenant.guard';
+import { RequirePermissions } from '../../../auth/decorators/require-permissions.decorator';
+import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
 
 @ApiTags('Facturación Electrónica')
 @Controller('facturacion')
-@UseGuards(AuthGuard('jwt'), TenantGuard)
+@UseGuards(TenantGuard, PermissionsGuard)
 export class FacturacionController {
   constructor(private readonly facturacionService: FacturacionService) {}
 
   @Post('emitir')
+  @RequirePermissions('facturacion.emitir')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Emitir comprobante electrónico (boleta/factura) desde una venta',
@@ -46,6 +48,7 @@ export class FacturacionController {
   }
 
   @Get('comprobantes')
+  @RequirePermissions('facturacion.ver')
   @ApiOperation({ summary: 'Historial de comprobantes electrónicos' })
   listar(
     @Request() req: RequestAutenticada,
@@ -65,6 +68,7 @@ export class FacturacionController {
   }
 
   @Get('comprobantes/:id')
+  @RequirePermissions('facturacion.ver')
   @ApiOperation({ summary: 'Detalle de un comprobante electrónico' })
   detalle(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -74,6 +78,7 @@ export class FacturacionController {
   }
 
   @Post('comprobantes/:id/enviar')
+  @RequirePermissions('facturacion.enviar')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Enviar (o reanudar envío) del comprobante a SUNAT',
@@ -86,6 +91,7 @@ export class FacturacionController {
   }
 
   @Post('comprobantes/:id/reintentar')
+  @RequirePermissions('facturacion.enviar')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Reintentar envío (mismo correlativo y artefactos)',
@@ -98,6 +104,7 @@ export class FacturacionController {
   }
 
   @Get('comprobantes/:id/xml')
+  @RequirePermissions('facturacion.ver')
   @ApiOperation({ summary: 'Descargar XML firmado' })
   async xml(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -113,6 +120,7 @@ export class FacturacionController {
   }
 
   @Get('comprobantes/:id/cdr')
+  @RequirePermissions('facturacion.ver')
   @ApiOperation({ summary: 'Descargar XML de la CDR (constancia SUNAT)' })
   async cdr(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
@@ -128,6 +136,7 @@ export class FacturacionController {
   }
 
   @Get('comprobantes/:id/pdf')
+  @RequirePermissions('facturacion.ver')
   @ApiOperation({ summary: 'Descargar representación impresa (PDF)' })
   async pdf(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,

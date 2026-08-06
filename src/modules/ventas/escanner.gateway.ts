@@ -1,7 +1,6 @@
 import {
   ConnectedSocket,
   MessageBody,
-  OnGatewayConnection,
   OnGatewayDisconnect,
   OnGatewayInit,
   SubscribeMessage,
@@ -27,9 +26,7 @@ interface ScannerSession {
   cors: createCorsOptions(),
   namespace: 'escanner',
 })
-export class EscannerGateway
-  implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit
-{
+export class EscannerGateway implements OnGatewayDisconnect, OnGatewayInit {
   @WebSocketServer()
   server: Server;
 
@@ -53,15 +50,7 @@ export class EscannerGateway
     });
   }
 
-  handleConnection(client: Socket): void {
-    const user = this.socketAuth.getUser(client);
-    console.log(
-      `[EscannerGateway] Conexión establecida y autenticada para: ${user.nombre} (${client.id})`,
-    );
-  }
-
   handleDisconnect(client: Socket): void {
-    console.log(`[EscannerGateway] Dispositivo desconectado: ${client.id}`);
     const code = this.socketSessionMap.get(client.id);
     this.socketSessionMap.delete(client.id);
     if (!code) return;
@@ -77,10 +66,8 @@ export class EscannerGateway
 
   @SubscribeMessage('create_session')
   createSession(@ConnectedSocket() client: Socket) {
-    console.log(`[EscannerGateway] Recibido 'create_session' de: ${client.id}`);
     try {
       const user = this.socketAuth.getUser(client);
-      console.log(`[EscannerGateway] Usuario obtenido para sesión:`, user);
       this.removeSessionForSocket(client.id);
 
       const code = randomBytes(18).toString('base64url').toUpperCase();
@@ -95,7 +82,6 @@ export class EscannerGateway
       this.socketSessionMap.set(client.id, code);
       void client.join(code);
 
-      console.log(`[EscannerGateway] Sesión creada con éxito. Código: ${code}`);
       return { success: true, sessionCode: code, expiresAt: session.expiresAt };
     } catch (err) {
       console.error(`[EscannerGateway] Error al crear sesión:`, err);

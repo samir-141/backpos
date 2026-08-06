@@ -4,10 +4,8 @@ import {
   Body,
   HttpCode,
   HttpStatus,
-  UseGuards,
   Logger,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PrintingQzService } from './printing-qz.service';
 import { SignRequestDto } from './dto/sign-request.dto';
@@ -15,7 +13,6 @@ import { SignRequestDto } from './dto/sign-request.dto';
 @ApiTags('Impresión QZ Tray')
 @ApiBearerAuth()
 @Controller('printing-qz')
-@UseGuards(AuthGuard('jwt'))
 export class PrintingQzController {
   private readonly logger = new Logger(PrintingQzController.name);
 

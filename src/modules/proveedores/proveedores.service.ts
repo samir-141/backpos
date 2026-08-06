@@ -5,23 +5,14 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { isValidPeruvianRuc } from '../../common/validators/documento.validator';
 import {
   CreateProveedorDto,
   QueryProveedoresDto,
   UpdateProveedorDto,
 } from './dto/proveedor.dto';
 
-export function isValidPeruvianRuc(ruc: string): boolean {
-  if (!/^(10|15|16|17|20)\d{9}$/.test(ruc)) return false;
-  const weights = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
-  const sum = weights.reduce(
-    (total, weight, index) => total + Number(ruc[index]) * weight,
-    0,
-  );
-  const remainder = 11 - (sum % 11);
-  const verifier = remainder === 10 ? 0 : remainder === 11 ? 1 : remainder;
-  return verifier === Number(ruc[10]);
-}
+export { isValidPeruvianRuc };
 
 @Injectable()
 export class ProveedoresService {

@@ -9,11 +9,12 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../auth/decorators/roles.decorator';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { TenantGuard } from '../../auth/guards/tenant.guard';
+import { RequirePermissions } from '../../auth/decorators/require-permissions.decorator';
+import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 import { ComprasService } from './compras.service';
 import { CreateCompraDto, QueryComprasDto } from './dto/compras.dto';
 
@@ -24,12 +25,13 @@ interface TenantRequest {
 
 @ApiTags('Compras')
 @Controller('compras')
-@UseGuards(AuthGuard('jwt'), TenantGuard, RolesGuard)
+@UseGuards(TenantGuard, RolesGuard, PermissionsGuard)
 @Roles('ADMINISTRADOR', 'GERENTE', 'ALMACENERO')
 export class ComprasController {
   constructor(private readonly comprasService: ComprasService) {}
 
   @Post()
+  @RequirePermissions('compras.crear')
   create(
     @Request() req: TenantRequest,
     @Headers('x-sucursal-id') sucursalHeader: string | undefined,
@@ -44,6 +46,7 @@ export class ComprasController {
   }
 
   @Get()
+  @RequirePermissions('compras.ver')
   findAll(
     @Request() req: TenantRequest,
     @Headers('x-sucursal-id') sucursalHeader: string | undefined,
@@ -58,6 +61,7 @@ export class ComprasController {
   }
 
   @Get(':id')
+  @RequirePermissions('compras.ver')
   findOne(@Request() req: TenantRequest, @Param('id') id: string) {
     return this.comprasService.findOne(req.botica_id, req.user.id, id);
   }

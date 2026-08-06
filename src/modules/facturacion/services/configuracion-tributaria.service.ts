@@ -38,6 +38,19 @@ export class ConfiguracionTributariaService {
     return this.sanitizar(config);
   }
 
+  async obtenerBotica(boticaId: string) {
+    return this.prisma.boticas.findUnique({
+      where: { id: boticaId },
+      select: {
+        nombre: true,
+        razon_social: true,
+        ruc: true,
+        direccion: true,
+        telefono: true,
+      },
+    });
+  }
+
   async guardar(
     dto: GuardarConfiguracionTributariaDto,
     boticaId: string,

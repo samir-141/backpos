@@ -168,6 +168,7 @@ export class AdministracionGeneralService {
       direccion: b.direccion,
       telefono: b.telefono,
       email: b.email,
+      dominio: (b.configuracion as any)?.dominio || '',
       estado: b.estado,
       created_at: b.created_at,
       sucursales: b.sucursales.map((s) => ({
@@ -313,6 +314,49 @@ export class AdministracionGeneralService {
         );
       }
 
+      // Validar y normalizar dominio
+      const domainNormalized = body.dominio.trim().toLowerCase();
+
+      // Validar que el correo de la empresa termine con @dominio
+      if (
+        body.email &&
+        !body.email.toLowerCase().endsWith(`@${domainNormalized}`)
+      ) {
+        throw new BadRequestException(
+          `El correo de la empresa debe pertenecer al dominio registrado (@${domainNormalized}).`,
+        );
+      }
+
+      // Validar que el correo del responsable termine con @dominio
+      if (
+        body.responsable_correo &&
+        !body.responsable_correo.toLowerCase().endsWith(`@${domainNormalized}`)
+      ) {
+        throw new BadRequestException(
+          `El correo del responsable debe pertenecer al dominio registrado (@${domainNormalized}).`,
+        );
+      }
+
+      // Validar dominio único
+      const todasBoticas = await tx.boticas.findMany({
+        where: { deleted_at: null },
+        select: { id: true, configuracion: true, nombre: true },
+      });
+
+      const existeDominio = todasBoticas.find((b) => {
+        const config = (b.configuracion || {}) as Record<string, any>;
+        return (
+          config.dominio &&
+          config.dominio.trim().toLowerCase() === domainNormalized
+        );
+      });
+
+      if (existeDominio) {
+        throw new BadRequestException(
+          `El dominio '${domainNormalized}' ya está registrado por la botica '${existeDominio.nombre}'.`,
+        );
+      }
+
       // 1. Crear botica
       const botica = await tx.boticas.create({
         data: {
@@ -322,6 +366,7 @@ export class AdministracionGeneralService {
           direccion: body.direccion,
           telefono: body.telefono,
           email: body.email,
+          configuracion: { dominio: domainNormalized },
           estado: 'ACTIVO',
         },
       });
@@ -456,6 +501,49 @@ export class AdministracionGeneralService {
     });
     if (!existe) throw new NotFoundException('La botica no existe.');
 
+    let config = (existe.configuracion || {}) as Record<string, any>;
+    const targetDomain =
+      body.dominio !== undefined
+        ? body.dominio.trim().toLowerCase()
+        : config.dominio || '';
+
+    // Si hay dominio (ya sea nuevo o el anterior)
+    if (targetDomain) {
+      // Validar que el correo de la empresa termine con @dominio
+      const targetEmail = body.email !== undefined ? body.email : existe.email;
+      if (
+        targetEmail &&
+        !targetEmail.toLowerCase().endsWith(`@${targetDomain}`)
+      ) {
+        throw new BadRequestException(
+          `El correo de la empresa debe pertenecer al dominio registrado (@${targetDomain}).`,
+        );
+      }
+    }
+
+    if (body.dominio !== undefined) {
+      const domainNormalized = body.dominio.trim().toLowerCase();
+
+      // Verificar que el dominio no esté en uso por otra botica
+      const todasBoticas = await this.prisma.boticas.findMany({
+        where: { id: { not: boticaId }, deleted_at: null },
+        select: { configuracion: true, nombre: true },
+      });
+
+      const existeDominio = todasBoticas.find((b) => {
+        const c = (b.configuracion || {}) as Record<string, any>;
+        return c.dominio && c.dominio.trim().toLowerCase() === domainNormalized;
+      });
+
+      if (existeDominio) {
+        throw new BadRequestException(
+          `El dominio '${domainNormalized}' ya está registrado por la botica '${existeDominio.nombre}'.`,
+        );
+      }
+
+      config = { ...config, dominio: domainNormalized };
+    }
+
     return this.prisma.boticas.update({
       where: { id: boticaId },
       data: {
@@ -465,6 +553,7 @@ export class AdministracionGeneralService {
         direccion: body.direccion,
         telefono: body.telefono,
         email: body.email,
+        configuracion: config as any,
         estado: body.estado,
       },
     });

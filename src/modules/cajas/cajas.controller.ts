@@ -10,7 +10,6 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CajasService } from './cajas.service';
 import {
@@ -21,6 +20,8 @@ import {
 import { TenantGuard } from '../../auth/guards/tenant.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { RequirePermissions } from '../../auth/decorators/require-permissions.decorator';
+import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 
 const ROLES_CAJA = [
   'ADMINISTRADOR',
@@ -32,12 +33,13 @@ const ROLES_CAJA = [
 
 @ApiTags('Cajas & Turnos')
 @Controller('cajas')
-@UseGuards(AuthGuard('jwt'), TenantGuard, RolesGuard)
+@UseGuards(TenantGuard, RolesGuard, PermissionsGuard)
 @Roles(...ROLES_CAJA)
 export class CajasController {
   constructor(private readonly cajasService: CajasService) {}
 
   @Get('estado')
+  @RequirePermissions('cajas.ver')
   @ApiOperation({
     summary:
       'Obtener estado de la caja de la sucursal (ABIERTA/CERRADA, monto inicial, ventas acumuladas y efectivo esperado)',
@@ -56,6 +58,7 @@ export class CajasController {
   }
 
   @Post('aperturar')
+  @RequirePermissions('cajas.abrir')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Aperturar turno de caja ingresando el monto inicial de sencillo',
@@ -75,6 +78,7 @@ export class CajasController {
   }
 
   @Post('movimiento')
+  @RequirePermissions('cajas.movimientos')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Registrar ingreso o egreso manual de efectivo en caja',
@@ -94,6 +98,7 @@ export class CajasController {
   }
 
   @Post('cerrar')
+  @RequirePermissions('cajas.cerrar')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary:

@@ -76,4 +76,11 @@ export class QueryProductosDto {
   @IsEnum(OrdenProductos)
   @IsOptional()
   orden?: OrdenProductos = OrdenProductos.NOMBRE_ASC;
+
+  @ApiPropertyOptional({
+    description: 'Filtrar solo con stock mayor a cero',
+  })
+  @IsString()
+  @IsOptional()
+  solo_con_stock?: string;
 }

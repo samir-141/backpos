@@ -475,11 +475,14 @@ export class FacturacionService {
     boticaId: string,
   ): Promise<configuraciones_tributarias> {
     const config = await this.prisma.configuraciones_tributarias.findFirst({
-      where: { botica_id: boticaId, deleted_at: null },
+      where: { botica_id: boticaId, activo: true, deleted_at: null },
     });
     if (!config) {
+      this.logger.warn(
+        `Intento de emisión sin configuración tributaria activa para botica ${boticaId}`,
+      );
       throw new NotFoundException(
-        'La empresa no tiene configuración tributaria',
+        'La empresa no tiene configuración tributaria activa',
       );
     }
     return config;

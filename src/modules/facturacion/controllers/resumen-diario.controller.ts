@@ -11,7 +11,6 @@ import {
   HttpStatus,
   BadRequestException,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { IsDateString } from 'class-validator';
 import type { RequestAutenticada } from '../../../auth/interfaces/request-autenticada.interface';
@@ -19,6 +18,8 @@ import { ResumenDiarioService } from '../services/resumen-diario.service';
 import { TenantGuard } from '../../../auth/guards/tenant.guard';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
 import { Roles } from '../../../auth/decorators/roles.decorator';
+import { RequirePermissions } from '../../../auth/decorators/require-permissions.decorator';
+import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
 
 class GenerarResumenDto {
   @IsDateString()
@@ -27,17 +28,19 @@ class GenerarResumenDto {
 
 @ApiTags('Resúmenes Diarios SUNAT')
 @Controller('facturacion/resumenes-diarios')
-@UseGuards(AuthGuard('jwt'), TenantGuard)
+@UseGuards(TenantGuard, PermissionsGuard)
 export class ResumenDiarioController {
   constructor(private readonly resumenes: ResumenDiarioService) {}
 
   @Get()
+  @RequirePermissions('facturacion.resumenes')
   @ApiOperation({ summary: 'Listar resúmenes diarios de la empresa' })
   listar(@Request() req: RequestAutenticada) {
     return this.resumenes.listar(req.botica_id);
   }
 
   @Post('generar')
+  @RequirePermissions('facturacion.resumenes')
   @Roles('ADMINISTRADOR')
   @UseGuards(RolesGuard)
   @HttpCode(HttpStatus.CREATED)
@@ -53,6 +56,7 @@ export class ResumenDiarioController {
   }
 
   @Post(':id/enviar')
+  @RequirePermissions('facturacion.resumenes')
   @Roles('ADMINISTRADOR')
   @UseGuards(RolesGuard)
   @HttpCode(HttpStatus.OK)
@@ -65,6 +69,7 @@ export class ResumenDiarioController {
   }
 
   @Post(':id/consultar')
+  @RequirePermissions('facturacion.resumenes')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Consultar ticket del resumen en SUNAT (getStatus)',

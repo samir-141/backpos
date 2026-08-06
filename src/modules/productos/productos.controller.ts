@@ -14,7 +14,6 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ProductosService } from './productos.service';
 import { QueryProductosDto } from './dto/query-productos.dto';
@@ -23,6 +22,8 @@ import { UpdateProductoDto } from './dto/update-producto.dto';
 import { TenantGuard } from '../../auth/guards/tenant.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { RequirePermissions } from '../../auth/decorators/require-permissions.decorator';
+import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 
 const ROLES_LECTURA_PRODUCTOS = [
   'ADMINISTRADOR',
@@ -41,12 +42,13 @@ const ROLES_GESTION_INVENTARIO = [
 
 @ApiTags('Productos')
 @Controller('productos')
-@UseGuards(AuthGuard('jwt'), TenantGuard, RolesGuard)
+@UseGuards(TenantGuard, RolesGuard, PermissionsGuard)
 export class ProductosController {
   constructor(private readonly productosService: ProductosService) {}
 
   @Get()
   @Roles(...ROLES_LECTURA_PRODUCTOS)
+  @RequirePermissions('inventario.ver')
   @ApiOperation({
     summary: 'Listar productos con paginación, filtros y ordenamiento',
   })
@@ -68,6 +70,7 @@ export class ProductosController {
 
   @Get('sucursal/:sucursalId')
   @Roles(...ROLES_LECTURA_PRODUCTOS)
+  @RequirePermissions('inventario.ver')
   @ApiOperation({ summary: 'Listar productos filtrados por ID de sucursal' })
   findBySucursal(
     @Request() req: any,
@@ -86,6 +89,7 @@ export class ProductosController {
 
   @Get('buscar/identificador')
   @Roles(...ROLES_LECTURA_PRODUCTOS)
+  @RequirePermissions('inventario.ver')
   @ApiOperation({
     summary:
       'Buscar producto comercial o presentación por SKU, código de barras o código interno',
@@ -96,6 +100,7 @@ export class ProductosController {
 
   @Get(':id')
   @Roles(...ROLES_LECTURA_PRODUCTOS)
+  @RequirePermissions('inventario.ver')
   @ApiOperation({
     summary: 'Obtener detalle de un producto comercial por su ID',
   })
@@ -105,6 +110,7 @@ export class ProductosController {
 
   @Post()
   @Roles(...ROLES_GESTION_INVENTARIO)
+  @RequirePermissions('inventario.crear')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary:
@@ -116,6 +122,7 @@ export class ProductosController {
 
   @Patch(':id')
   @Roles(...ROLES_GESTION_INVENTARIO)
+  @RequirePermissions('inventario.editar')
   @ApiOperation({
     summary:
       'Actualizar campos editables de un producto comercial o su presentación',
@@ -130,6 +137,7 @@ export class ProductosController {
 
   @Post('reabastecer')
   @Roles(...ROLES_GESTION_INVENTARIO)
+  @RequirePermissions('inventario.reabastecer')
   @ApiOperation({
     summary:
       'Reabastecer stock de un producto agregando un lote nuevo o existente (+500 unidades)',
@@ -155,6 +163,7 @@ export class ProductosController {
 
   @Post(':id/presentaciones')
   @Roles(...ROLES_GESTION_INVENTARIO)
+  @RequirePermissions('inventario.presentaciones')
   @ApiOperation({
     summary:
       'Configurar/Actualizar presentaciones de venta unificadas por producto',
@@ -182,6 +191,7 @@ export class ProductosController {
 
   @Delete(':id')
   @Roles(...ROLES_GESTION_INVENTARIO)
+  @RequirePermissions('inventario.eliminar')
   @ApiOperation({
     summary: 'Marcar como eliminado (soft delete) un producto comercial',
   })

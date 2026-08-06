@@ -14,8 +14,9 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { TenantGuard } from '../../auth/guards/tenant.guard';
+import { RequirePermissions } from '../../auth/decorators/require-permissions.decorator';
+import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 import { CreateGastoDto } from './dto/create-gasto.dto';
 import { GastosService } from './gastos.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -35,7 +36,7 @@ export class GastosAdminGuard implements CanActivate {
 }
 
 @Controller('gastos')
-@UseGuards(AuthGuard('jwt'), TenantGuard, GastosAdminGuard)
+@UseGuards(TenantGuard, GastosAdminGuard, PermissionsGuard)
 export class GastosController {
   constructor(
     private readonly gastosService: GastosService,
@@ -43,6 +44,7 @@ export class GastosController {
   ) {}
 
   @Get()
+  @RequirePermissions('gastos.ver')
   async listar(
     @Request() req: any,
     @Query('sucursal_id') sucursalId?: string,
@@ -55,6 +57,7 @@ export class GastosController {
   }
 
   @Post()
+  @RequirePermissions('gastos.crear')
   async crear(@Request() req: any, @Body() dto: CreateGastoDto) {
     const target = dto.sucursal_id || req.user.sucursal_id;
     await this.assertSucursalAsignada(req, target);
@@ -65,6 +68,7 @@ export class GastosController {
   }
 
   @Delete(':id')
+  @RequirePermissions('gastos.eliminar')
   async eliminar(@Request() req: any, @Param('id') id: string) {
     const gasto = await this.prisma.gastos_operativos.findFirst({
       where: { id, botica_id: req.botica_id, deleted_at: null },

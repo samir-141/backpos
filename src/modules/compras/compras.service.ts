@@ -107,13 +107,36 @@ export class ComprasService {
         usuarioId,
         sucursalSolicitada,
       );
-      const invoiceKey = `${boticaId}:${dto.proveedor_id}:${serie}:${numero}`;
+      let providerId = dto.proveedor_id;
+      if (!providerId) {
+        let genericProvider = await tx.proveedores.findFirst({
+          where: {
+            botica_id: boticaId,
+            ruc: '00000000000',
+            deleted_at: null,
+          },
+        });
+        if (!genericProvider) {
+          genericProvider = await tx.proveedores.create({
+            data: {
+              botica_id: boticaId,
+              ruc: '00000000000',
+              razon_social: 'PROVEEDOR GENÉRICO',
+              direccion: 'Dirección Genérica',
+              created_by: usuarioId,
+            },
+          });
+        }
+        providerId = genericProvider.id;
+      }
+
+      const invoiceKey = `${boticaId}:${providerId}:${serie}:${numero}`;
       await this.advisoryLock(tx, `compra:${invoiceKey}`);
 
       const existente = await tx.compras.findFirst({
         where: {
           botica_id: boticaId,
-          proveedor_id: dto.proveedor_id,
+          proveedor_id: providerId,
           serie,
           numero,
           deleted_at: null,
@@ -131,7 +154,7 @@ export class ComprasService {
 
       const proveedor = await tx.proveedores.findFirst({
         where: {
-          id: dto.proveedor_id,
+          id: providerId,
           botica_id: boticaId,
           deleted_at: null,
         },

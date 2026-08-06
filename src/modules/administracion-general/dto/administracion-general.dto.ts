@@ -69,6 +69,14 @@ export class CreateBoticaDto {
 
   @IsString()
   @IsNotEmpty()
+  @Matches(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, {
+    message:
+      'El dominio de la empresa debe tener un formato válido (ej: empresa.pe)',
+  })
+  dominio: string;
+
+  @IsString()
+  @IsNotEmpty()
   sucursal_nombre: string;
 
   @IsOptional()
@@ -134,6 +142,15 @@ export class UpdateBoticaDto {
   @IsOptional()
   @IsEmail()
   email?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/, {
+    message:
+      'El dominio de la empresa debe tener un formato válido (ej: empresa.pe)',
+  })
+  dominio?: string;
 
   @IsOptional()
   @IsIn(ESTADOS)

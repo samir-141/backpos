@@ -608,12 +608,14 @@ export class VentasService {
           usuario_id: finalUsuarioId,
           accion: 'VENTA_CREADA',
           tabla: 'ventas',
+          botica_id: boticaId,
           observacion: `Venta registrada por S/ ${totalCalculado} - ${dto.tipo_comprobante} (${metodoPagoNombre})`,
         });
 
         // WebSocket Real-time Event (Sección 22 Documento 02)
         this.eventsGateway.emitirEvento('venta.creada', {
           venta_id: venta.id,
+          sucursal_id: finalSucursalId,
           total: totalCalculado,
         });
         this.eventsGateway.emitirEvento('stock.actualizado', {

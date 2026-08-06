@@ -166,7 +166,7 @@ export class ProductosService {
         val,
       );
 
-    if (query.sucursal_id && isUuid(query.sucursal_id)) {
+    if (query.sucursal_id && isUuid(query.sucursal_id) && query.solo_con_stock === 'true') {
       condiciones.push(
         `producto_comercial_id IN (SELECT DISTINCT producto_comercial_id FROM public.lotes WHERE sucursal_id = $${paramIndex}::uuid AND deleted_at IS NULL AND stock_actual > 0)`,
       );

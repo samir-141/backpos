@@ -7,6 +7,10 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
 import { UpdateUsuarioDto } from './dto/update-usuario.dto';
+import {
+  PERMISOS_ARRAY,
+  ROLES_PERMISOS_MAP,
+} from '../../auth/permissions.constants';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -260,21 +264,15 @@ export class UsuariosService {
     }
 
     // --- SEED PERMISOS ---
-    const permisosBase = [
-      { codigo: 'ventas', descripcion: 'Ventas (POS)' },
-      { codigo: 'inventario', descripcion: 'Inventario & Productos' },
-      { codigo: 'clientes', descripcion: 'Clientes' },
-      { codigo: 'reportes', descripcion: 'Reportes & Analítica' },
-      { codigo: 'admin', descripcion: 'Administración & ERP' },
-    ];
     const permisosExistentes = await this.prisma.permisos.findMany({
       where: { botica_id: boticaId, deleted_at: null },
       select: { codigo: true },
     });
     const codigosExistentes = new Set(permisosExistentes.map((p) => p.codigo));
-    const permisosFaltantes = permisosBase.filter(
-      (p) => !codigosExistentes.has(p.codigo),
-    );
+    const permisosFaltantes = PERMISOS_ARRAY.map((codigo) => ({
+      codigo,
+      descripcion: codigo,
+    })).filter((p) => !codigosExistentes.has(p.codigo));
     if (permisosFaltantes.length > 0) {
       await this.prisma.permisos.createMany({
         data: permisosFaltantes.map((p) => ({
@@ -293,17 +291,50 @@ export class UsuariosService {
     // --- SEED ROL PERMISOS ---
     const rolesConPermisos = await this.prisma.roles.findMany({
       where: { botica_id: boticaId, deleted_at: null },
-      include: { rol_permisos: true },
+      include: { rol_permisos: { include: { permisos: true } } },
     });
 
-    for (const r of rolesConPermisos) {
-      if (r.rol_permisos.length === 0) {
-        const nombreUpper = r.nombre.toUpperCase();
-        const esAdmin = nombreUpper === 'ADMINISTRADOR';
-        const codigosAsignar = esAdmin
-          ? ['ventas', 'inventario', 'clientes', 'reportes', 'admin']
-          : ['ventas', 'inventario', 'clientes'];
+    const OLD_PERMISSION_CODES = new Set([
+      'ventas',
+      'inventario',
+      'clientes',
+      'reportes',
+      'admin',
+    ]);
 
+    for (const r of rolesConPermisos) {
+      const nombreUpper = r.nombre.toUpperCase();
+      const codigosAsignar = ROLES_PERMISOS_MAP[nombreUpper] || [];
+
+      const hasOldPermissions = r.rol_permisos.some(
+        (rp) => rp.permisos && OLD_PERMISSION_CODES.has(rp.permisos.codigo),
+      );
+
+      const hasNewPermissions = r.rol_permisos.some(
+        (rp) => rp.permisos && !OLD_PERMISSION_CODES.has(rp.permisos.codigo),
+      );
+
+      if (hasOldPermissions && !hasNewPermissions) {
+        await this.prisma.rol_permisos.deleteMany({
+          where: {
+            rol_id: r.id,
+            permisos: { codigo: { in: Array.from(OLD_PERMISSION_CODES) } },
+          },
+        });
+
+        const permisosAAsignar = todosPermisos.filter((p) =>
+          codigosAsignar.includes(p.codigo),
+        );
+        if (permisosAAsignar.length > 0) {
+          await this.prisma.rol_permisos.createMany({
+            data: permisosAAsignar.map((p) => ({
+              rol_id: r.id,
+              permiso_id: p.id,
+              botica_id: boticaId,
+            })),
+          });
+        }
+      } else if (r.rol_permisos.length === 0) {
         const permisosAAsignar = todosPermisos.filter((p) =>
           codigosAsignar.includes(p.codigo),
         );
@@ -460,7 +491,12 @@ export class UsuariosService {
     });
   }
 
-  async updateRol(boticaId: string, id: string, nombre: string, userId: string) {
+  async updateRol(
+    boticaId: string,
+    id: string,
+    nombre: string,
+    userId: string,
+  ) {
     const nombreTrimmed = nombre?.trim();
     if (!nombreTrimmed) {
       throw new BadRequestException('El nombre del rol es requerido');
@@ -475,7 +511,9 @@ export class UsuariosService {
     }
 
     if (rol.nombre.toUpperCase() === 'ADMINISTRADOR') {
-      throw new BadRequestException('No se puede modificar el rol ADMINISTRADOR');
+      throw new BadRequestException(
+        'No se puede modificar el rol ADMINISTRADOR',
+      );
     }
 
     const existing = await this.prisma.roles.findFirst({
@@ -511,7 +549,9 @@ export class UsuariosService {
     }
 
     if (rol.nombre.toUpperCase() === 'ADMINISTRADOR') {
-      throw new BadRequestException('No se puede eliminar el rol ADMINISTRADOR');
+      throw new BadRequestException(
+        'No se puede eliminar el rol ADMINISTRADOR',
+      );
     }
 
     const usersWithRole = await this.prisma.usuarios.findFirst({

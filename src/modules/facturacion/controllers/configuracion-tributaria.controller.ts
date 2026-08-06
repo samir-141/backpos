@@ -10,7 +10,6 @@ import {
   UploadedFile,
   BadRequestException,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiConsumes } from '@nestjs/swagger';
 import type { RequestAutenticada } from '../../../auth/interfaces/request-autenticada.interface';
@@ -19,20 +18,31 @@ import { GuardarConfiguracionTributariaDto } from '../dtos/configuracion-tributa
 import { TenantGuard } from '../../../auth/guards/tenant.guard';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
 import { Roles } from '../../../auth/decorators/roles.decorator';
+import { RequirePermissions } from '../../../auth/decorators/require-permissions.decorator';
+import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
 
 @ApiTags('Configuración Tributaria')
 @Controller('facturacion/configuracion-tributaria')
-@UseGuards(AuthGuard('jwt'), TenantGuard, RolesGuard)
+@UseGuards(TenantGuard, RolesGuard, PermissionsGuard)
 export class ConfiguracionTributariaController {
   constructor(private readonly configuracion: ConfiguracionTributariaService) {}
 
   @Get()
+  @RequirePermissions('facturacion.config')
   @ApiOperation({ summary: 'Obtener configuración tributaria de la empresa' })
   obtener(@Request() req: RequestAutenticada) {
     return this.configuracion.obtener(req.botica_id);
   }
 
+  @Get('botica')
+  @RequirePermissions('facturacion.config')
+  @ApiOperation({ summary: 'Obtener datos generales de la botica' })
+  obtenerBotica(@Request() req: RequestAutenticada) {
+    return this.configuracion.obtenerBotica(req.botica_id);
+  }
+
   @Post()
+  @RequirePermissions('facturacion.config')
   @Roles('ADMINISTRADOR')
   @ApiOperation({ summary: 'Crear configuración tributaria' })
   guardar(
@@ -43,6 +53,7 @@ export class ConfiguracionTributariaController {
   }
 
   @Patch()
+  @RequirePermissions('facturacion.config')
   @Roles('ADMINISTRADOR')
   @ApiOperation({ summary: 'Actualizar configuración tributaria' })
   actualizar(
@@ -53,6 +64,7 @@ export class ConfiguracionTributariaController {
   }
 
   @Post('certificado')
+  @RequirePermissions('facturacion.config')
   @Roles('ADMINISTRADOR')
   @ApiOperation({ summary: 'Subir certificado digital (.pfx/.p12)' })
   @ApiConsumes('multipart/form-data')
@@ -80,6 +92,7 @@ export class ConfiguracionTributariaController {
   }
 
   @Post('probar-conexion')
+  @RequirePermissions('facturacion.config')
   @Roles('ADMINISTRADOR')
   @ApiOperation({
     summary: 'Verificar que la configuración esté completa para emitir',

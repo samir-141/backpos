@@ -15,7 +15,6 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import {
   ApiTags,
   ApiOperation,
@@ -35,17 +34,20 @@ import {
 import { TenantGuard } from '../../auth/guards/tenant.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { RequirePermissions } from '../../auth/decorators/require-permissions.decorator';
+import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 
 @ApiTags('Catálogos Maestros')
 @ApiBearerAuth()
 @Controller('catalogos')
-@UseGuards(AuthGuard('jwt'), TenantGuard)
+@UseGuards(TenantGuard, PermissionsGuard)
 export class CatalogosController {
   private readonly logger = new Logger(CatalogosController.name);
 
   constructor(private readonly catalogosService: CatalogosService) {}
 
   @Get(':tipo')
+  @RequirePermissions('catalogos.ver')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Listar items de un catálogo' })
   @ApiParam({
@@ -64,6 +66,7 @@ export class CatalogosController {
   }
 
   @Get(':tipo/:id')
+  @RequirePermissions('catalogos.ver')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Obtener un item del catálogo por ID' })
   @ApiParam({ name: 'tipo', enum: TIPOS_CATALOGO })
@@ -81,6 +84,7 @@ export class CatalogosController {
 
   @Post(':tipo')
   @UseGuards(RolesGuard)
+  @RequirePermissions('catalogos.gestionar')
   @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Crear un nuevo item en el catálogo' })
@@ -99,6 +103,7 @@ export class CatalogosController {
 
   @Patch(':tipo/:id')
   @UseGuards(RolesGuard)
+  @RequirePermissions('catalogos.gestionar')
   @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Actualizar un item del catálogo' })
@@ -120,6 +125,7 @@ export class CatalogosController {
 
   @Delete(':tipo/:id')
   @UseGuards(RolesGuard)
+  @RequirePermissions('catalogos.gestionar')
   @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

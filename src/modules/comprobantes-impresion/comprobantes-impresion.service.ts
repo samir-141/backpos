@@ -1,5 +1,10 @@
 // src/modules/comprobantes-impresion/comprobantes-impresion.service.ts
-import { Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  OnModuleInit,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { numeroALetras } from '../facturacion/utils/numero-a-letras.util';
 import * as QRCode from 'qrcode';
@@ -43,6 +48,7 @@ function fontsPdfmake() {
 @Injectable()
 export class ComprobantesImpresionService implements OnModuleInit {
   private tempDir: string;
+  private readonly logger = new Logger(ComprobantesImpresionService.name);
 
   constructor(private readonly prisma: PrismaService) {
     this.tempDir = path.join(process.cwd(), 'temp');
@@ -52,11 +58,106 @@ export class ComprobantesImpresionService implements OnModuleInit {
     fs.mkdirSync(this.tempDir, { recursive: true });
   }
 
+  async depurarImpresion(
+    ventaId: string,
+    boticaId: string,
+  ): Promise<Record<string, unknown>> {
+    const resultado: Record<string, unknown> = {};
+
+    this.logger.log(`[DIAGNÓSTICO] ventaId=${ventaId}, boticaId=${boticaId}`);
+    resultado.ventaId = ventaId;
+    resultado.boticaIdSolicitado = boticaId;
+
+    const venta = await this.prisma.ventas.findFirst({
+      where: { id: ventaId, deleted_at: null },
+      include: {
+        clientes: true,
+        cajas: { include: { sucursales: true } },
+        pagos: { include: { metodos_pago: true } },
+        detalles_ventas: {
+          where: { deleted_at: null },
+          include: {
+            productos_presentaciones: {
+              include: {
+                productos_comerciales: true,
+                unidades_presentacion: true,
+              },
+            },
+          },
+        },
+        comprobantes_electronicos: true,
+      },
+    });
+
+    resultado.ventaEncontrada = venta ? 'SÍ' : 'NO';
+    if (venta) {
+      resultado.ventaBoticaId = venta.botica_id;
+      resultado.ventaId = venta.id;
+      resultado.ventaEstado = venta.estado;
+      resultado.ventaTotal = venta.total;
+      resultado.ventaFecha = venta.fecha;
+      resultado.ventaClienteId = venta.cliente_id;
+      resultado.ventaCajaId = venta.caja_id;
+      resultado.clienteNombre = venta.clientes?.nombre ?? 'SIN CLIENTE';
+      resultado.clienteTipoDoc = venta.clientes?.tipo_documento ?? 'N/A';
+      resultado.clienteNumDoc = venta.clientes?.numero_documento ?? 'N/A';
+      resultado.cajaNombre = venta.cajas?.nombre ?? 'SIN CAJA';
+      resultado.sucursalNombre =
+        venta.cajas?.sucursales?.nombre ?? 'SIN SUCURSAL';
+      resultado.comprobantesExistentes =
+        venta.comprobantes_electronicos?.length ?? 0;
+      resultado.detallesCount = venta.detalles_ventas.length;
+    } else {
+      resultado.motivo = 'Venta no encontrada en la base de datos';
+    }
+
+    const botica = venta
+      ? await this.prisma.boticas.findFirst({ where: { id: venta.botica_id } })
+      : null;
+
+    resultado.boticaEncontrada = botica ? 'SÍ' : 'NO';
+    if (botica) {
+      resultado.boticaId = botica.id;
+      resultado.boticaRuc = botica.ruc;
+      resultado.boticaRazonSocial = botica.razon_social;
+      resultado.boticaNombre = botica.nombre;
+      resultado.boticaDireccion = botica.direccion;
+    }
+
+    const boticaSolicitada = boticaId
+      ? await this.prisma.boticas.findFirst({ where: { id: boticaId } })
+      : null;
+
+    resultado.boticaSolicitadaEncontrada = boticaSolicitada ? 'SÍ' : 'NO';
+    if (boticaSolicitada) {
+      resultado.boticaSolicitadaRuc = boticaSolicitada.ruc;
+      resultado.boticaSolicitadaRazonSocial = boticaSolicitada.razon_social;
+      resultado.boticaSolicitadaNombre = boticaSolicitada.nombre;
+    }
+
+    if (venta && botica && boticaSolicitada) {
+      resultado.coincideBotica = venta.botica_id === boticaId;
+      resultado.coincideRuc = botica.ruc === boticaSolicitada.ruc;
+      resultado.coincideRazonSocial =
+        botica.razon_social === boticaSolicitada.razon_social;
+    }
+
+    this.logger.log(
+      `[DIAGNÓSTICO] Resultado: ${JSON.stringify(resultado, null, 2)}`,
+    );
+
+    return resultado;
+  }
+
   async generarImpresionPdf(
     ventaId: string,
     formato: 'A4' | 'TICKET80' | 'TICKET58',
     boticaId: string,
   ): Promise<string> {
+    this.logger.log(
+      `[IMPRSIÓN] ventaId=${ventaId}, boticaId=${boticaId}, formato=${formato}`,
+    );
+
     // 1. Cargar datos de la venta y relaciones
     const venta = await this.prisma.ventas.findFirst({
       where: { id: ventaId, botica_id: boticaId, deleted_at: null },
@@ -84,6 +185,10 @@ export class ComprobantesImpresionService implements OnModuleInit {
       },
     });
 
+    this.logger.log(
+      `[IMPRSIÓN] Venta encontrada: ${venta ? 'SÍ (botica_id=' + venta.botica_id + ')' : 'NO'}`,
+    );
+
     if (!venta) {
       throw new NotFoundException('Venta no encontrada');
     }
@@ -92,6 +197,10 @@ export class ComprobantesImpresionService implements OnModuleInit {
     const botica = await this.prisma.boticas.findFirst({
       where: { id: boticaId },
     });
+
+    this.logger.log(
+      `[IMPRSIÓN] Botica cargada: ${botica ? botica.ruc + ' - ' + botica.razon_social : 'NO ENCONTRADA'}`,
+    );
 
     if (!botica) {
       throw new NotFoundException('Empresa emisora no encontrada');
@@ -315,5 +424,31 @@ export class ComprobantesImpresionService implements OnModuleInit {
         'El archivo de impresión temporal ya no está disponible o ha expirado',
       );
     }
+  }
+
+  async obtenerBotica(
+    boticaId: string,
+    requestingBoticaId: string,
+  ): Promise<Record<string, string>> {
+    if (boticaId !== requestingBoticaId) {
+      throw new NotFoundException('Botica no encontrada');
+    }
+
+    const botica = await this.prisma.boticas.findFirst({
+      where: { id: boticaId },
+    });
+
+    if (!botica) {
+      throw new NotFoundException('Botica no encontrada');
+    }
+
+    return {
+      id: botica.id,
+      nombre: botica.nombre,
+      razon_social: botica.razon_social,
+      ruc: botica.ruc,
+      direccion: botica.direccion ?? '',
+      telefono: botica.telefono ?? '',
+    };
   }
 }

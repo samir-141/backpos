@@ -6,18 +6,20 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { DashboardService } from './dashboard.service';
 import { TenantGuard } from '../../auth/guards/tenant.guard';
+import { RequirePermissions } from '../../auth/decorators/require-permissions.decorator';
+import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 
 @ApiTags('Dashboard')
 @Controller('dashboard')
-@UseGuards(AuthGuard('jwt'), TenantGuard)
+@UseGuards(TenantGuard, PermissionsGuard)
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get('resumen')
+  @RequirePermissions('dashboard.ver')
   @ApiOperation({
     summary:
       'Obtener métricas clave de dashboard (KPIs del día, gráfico de 7 días, alertas y ventas top)',

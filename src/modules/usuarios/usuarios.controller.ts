@@ -12,7 +12,6 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { UsuariosService } from './usuarios.service';
 import { CreateUsuarioDto } from './dto/create-usuario.dto';
@@ -20,20 +19,24 @@ import { UpdateUsuarioDto } from './dto/update-usuario.dto';
 import { TenantGuard } from '../../auth/guards/tenant.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { RequirePermissions } from '../../auth/decorators/require-permissions.decorator';
+import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 
 @ApiTags('Usuarios & Administración')
 @Controller('usuarios')
-@UseGuards(AuthGuard('jwt'), TenantGuard)
+@UseGuards(TenantGuard, PermissionsGuard)
 export class UsuariosController {
   constructor(private readonly usuariosService: UsuariosService) {}
 
   @Get()
+  @RequirePermissions('usuarios.ver')
   @ApiOperation({ summary: 'Listar todos los usuarios de la botica' })
   findAll(@Request() req: any) {
     return this.usuariosService.findAll(req.botica_id);
   }
 
   @Get('roles')
+  @RequirePermissions('usuarios.ver')
   @ApiOperation({ summary: 'Listar roles del sistema y sus permisos' })
   getRoles(@Request() req: any) {
     return this.usuariosService.getRoles(req.botica_id);
@@ -41,15 +44,21 @@ export class UsuariosController {
 
   @Post('roles')
   @UseGuards(RolesGuard)
+  @RequirePermissions('roles.gestionar')
   @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Crear nuevo rol para la botica' })
   createRol(@Body() body: { nombre: string }, @Request() req: any) {
-    return this.usuariosService.createRol(req.botica_id, body.nombre, req.user.id);
+    return this.usuariosService.createRol(
+      req.botica_id,
+      body.nombre,
+      req.user.id,
+    );
   }
 
   @Patch('roles/:id')
   @UseGuards(RolesGuard)
+  @RequirePermissions('roles.gestionar')
   @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @ApiOperation({ summary: 'Actualizar nombre de rol' })
   updateRol(
@@ -57,11 +66,17 @@ export class UsuariosController {
     @Body() body: { nombre: string },
     @Request() req: any,
   ) {
-    return this.usuariosService.updateRol(req.botica_id, id, body.nombre, req.user.id);
+    return this.usuariosService.updateRol(
+      req.botica_id,
+      id,
+      body.nombre,
+      req.user.id,
+    );
   }
 
   @Delete('roles/:id')
   @UseGuards(RolesGuard)
+  @RequirePermissions('roles.gestionar')
   @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @ApiOperation({ summary: 'Eliminar un rol (soft delete)' })
   deleteRol(@Param('id') id: string, @Request() req: any) {
@@ -70,6 +85,7 @@ export class UsuariosController {
 
   @Put('roles/:rolId/permisos')
   @UseGuards(RolesGuard)
+  @RequirePermissions('roles.gestionar')
   @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @ApiOperation({ summary: 'Actualizar los permisos asignados a un rol' })
   actualizarRolPermisos(
@@ -85,6 +101,7 @@ export class UsuariosController {
   }
 
   @Get('sucursales')
+  @RequirePermissions('sucursales.ver')
   @ApiOperation({ summary: 'Listar sucursales de la empresa' })
   getSucursales(@Request() req: any) {
     return this.usuariosService.getSucursales(req.botica_id);
@@ -92,6 +109,7 @@ export class UsuariosController {
 
   @Post('sucursales')
   @UseGuards(RolesGuard)
+  @RequirePermissions('sucursales.crear')
   @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Registrar nueva sucursal' })
@@ -107,6 +125,7 @@ export class UsuariosController {
   }
 
   @Get(':id')
+  @RequirePermissions('usuarios.ver')
   @ApiOperation({ summary: 'Obtener detalle de un usuario por ID' })
   findOne(@Param('id') id: string, @Request() req: any) {
     return this.usuariosService.findOne(req.botica_id, id);
@@ -114,6 +133,7 @@ export class UsuariosController {
 
   @Post()
   @UseGuards(RolesGuard)
+  @RequirePermissions('usuarios.crear')
   @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Registrar un nuevo usuario' })
@@ -123,6 +143,7 @@ export class UsuariosController {
 
   @Patch(':id')
   @UseGuards(RolesGuard)
+  @RequirePermissions('usuarios.editar')
   @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @ApiOperation({ summary: 'Actualizar información o contraseña de usuario' })
   update(
@@ -135,6 +156,7 @@ export class UsuariosController {
 
   @Delete(':id')
   @UseGuards(RolesGuard)
+  @RequirePermissions('usuarios.eliminar')
   @Roles('ADMINISTRADOR', 'PROPIETARIO')
   @ApiOperation({ summary: 'Eliminar usuario (soft delete)' })
   remove(@Param('id') id: string, @Request() req: any) {

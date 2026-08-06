@@ -12,29 +12,31 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ClientesService } from './clientes.service';
 import { CreateClienteDto } from './dto/create-cliente.dto';
 import { UpdateClienteDto } from './dto/update-cliente.dto';
 import { QueryClientesDto } from './dto/query-clientes.dto';
 import { TenantGuard } from '../../auth/guards/tenant.guard';
+import { RequirePermissions } from '../../auth/decorators/require-permissions.decorator';
+import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 
 @ApiTags('Clientes')
 @Controller('clientes')
-@UseGuards(AuthGuard('jwt'), TenantGuard)
+@UseGuards(TenantGuard, PermissionsGuard)
 export class ClientesController {
   constructor(private readonly clientesService: ClientesService) {}
 
   @Get()
+  @RequirePermissions('clientes.ver')
   @ApiOperation({
-    summary: 'Listar clientes con paginación, búsqueda y filtros',
   })
   findAll(@Request() req: any, @Query() query: QueryClientesDto) {
     return this.clientesService.findAll(req.botica_id, query);
   }
 
   @Get('consultar-padron')
+  @RequirePermissions('clientes.ver')
   @ApiOperation({
     summary:
       'Consultar padrón RENIEC (DNI) / SUNAT (RUC) o base de datos local',
@@ -47,6 +49,7 @@ export class ClientesController {
   }
 
   @Get('buscar/:documento')
+  @RequirePermissions('clientes.ver')
   @ApiOperation({
     summary: 'Buscar cliente por número de documento de identidad',
   })
@@ -58,14 +61,15 @@ export class ClientesController {
   }
 
   @Get(':id')
+  @RequirePermissions('clientes.ver')
   @ApiOperation({
-    summary: 'Obtener detalle completo de un cliente e historial de compras',
   })
   findOne(@Param('id') id: string, @Request() req: any) {
     return this.clientesService.findOne(req.botica_id, id);
   }
 
   @Post()
+  @RequirePermissions('clientes.crear')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Registrar un nuevo cliente' })
   create(@Body() createDto: CreateClienteDto, @Request() req: any) {
@@ -73,6 +77,7 @@ export class ClientesController {
   }
 
   @Patch(':id')
+  @RequirePermissions('clientes.editar')
   @ApiOperation({ summary: 'Actualizar información de un cliente existente' })
   update(
     @Param('id') id: string,
@@ -88,6 +93,7 @@ export class ClientesController {
   }
 
   @Delete(':id')
+  @RequirePermissions('clientes.eliminar')
   @ApiOperation({ summary: 'Eliminar cliente (soft delete)' })
   remove(@Param('id') id: string, @Request() req: any) {
     return this.clientesService.remove(req.botica_id, id, req.user.id);

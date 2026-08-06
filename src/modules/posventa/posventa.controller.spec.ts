@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PosventaController } from './posventa.controller';
 import { PosventaService } from './posventa.service';
+import { Reflector } from '@nestjs/core';
+import { PrismaService } from '../../prisma/prisma.service';
 
 const BOTICA_ID = 'botica-1';
 
@@ -25,6 +27,14 @@ describe('PosventaController', () => {
         {
           provide: PosventaService,
           useValue: service,
+        },
+        {
+          provide: Reflector,
+          useValue: { getAllAndOverride: jest.fn().mockReturnValue(null) },
+        },
+        {
+          provide: PrismaService,
+          useValue: {},
         },
       ],
     }).compile();

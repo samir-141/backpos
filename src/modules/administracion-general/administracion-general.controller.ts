@@ -10,7 +10,6 @@ import {
   UseGuards,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { AdministracionGeneralService } from './administracion-general.service';
 import { PlatformAdminGuard } from '../../auth/guards/platform-admin.guard';
 import {
@@ -25,7 +24,7 @@ import {
 } from './dto/administracion-general.dto';
 
 @Controller('administracion-general')
-@UseGuards(AuthGuard('jwt'), PlatformAdminGuard)
+@UseGuards(PlatformAdminGuard)
 export class AdministracionGeneralController {
   constructor(private readonly service: AdministracionGeneralService) {}
 

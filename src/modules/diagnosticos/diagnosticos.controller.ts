@@ -1,6 +1,5 @@
 // src/modules/diagnosticos/diagnosticos.controller.ts
 import { Controller, Get, UseGuards } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { DiscoveryService, Reflector, MetadataScanner } from '@nestjs/core';
 import { InstanceWrapper } from '@nestjs/core/injector/instance-wrapper';
@@ -15,7 +14,7 @@ import { PlatformAdminGuard } from '../../auth/guards/platform-admin.guard';
 
 @ApiTags('Diagnóstico')
 @Controller('diagnosticos')
-@UseGuards(AuthGuard('jwt'), PlatformAdminGuard)
+@UseGuards(PlatformAdminGuard)
 export class DiagnosticosController {
   constructor(
     private readonly discoveryService: DiscoveryService,

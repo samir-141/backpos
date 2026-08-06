@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ProductsModule } from './products/products.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { GlobalAuthGuard } from './auth/guards/global-auth.guard';
 import { ProductosModule } from './modules/productos/productos.module';
 import { UsuariosModule } from './modules/usuarios/usuarios.module';
 import { AuthModule } from './auth/auth.module';
@@ -56,6 +58,12 @@ import { QzSecurityModule } from './modules/qz-security/qz-security.module';
     QzSecurityModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: GlobalAuthGuard,
+    },
+  ],
 })
 export class AppModule {}

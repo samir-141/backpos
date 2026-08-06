@@ -78,6 +78,9 @@ export class AuthService {
           empresa: s.boticas?.razon_social || 'FarmaPOS',
           botica_id: s.boticas?.id,
           es_principal: asig ? Boolean(asig.es_principal) : false,
+          botica_ruc: s.boticas?.ruc || null,
+          botica_direccion: s.boticas?.direccion || null,
+          botica_telefono: s.boticas?.telefono || null,
         };
       });
     } else {
@@ -87,6 +90,9 @@ export class AuthService {
         empresa: s.sucursales.boticas?.razon_social || 'FarmaPOS',
         botica_id: s.sucursales.boticas?.id,
         es_principal: Boolean(s.es_principal),
+        botica_ruc: s.sucursales.boticas?.ruc || null,
+        botica_direccion: s.sucursales.boticas?.direccion || null,
+        botica_telefono: s.sucursales.boticas?.telefono || null,
       }));
     }
 

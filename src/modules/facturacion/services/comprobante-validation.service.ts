@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -66,6 +67,8 @@ export function mapearTipoDocumentoIdentidad(
  */
 @Injectable()
 export class ComprobanteValidationService {
+  private readonly logger = new Logger(ComprobanteValidationService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async validarYObtenerContexto(
@@ -142,6 +145,9 @@ export class ComprobanteValidationService {
         where: { botica_id: boticaId, deleted_at: null },
       });
     if (!configuracion || !configuracion.activo) {
+      this.logger.warn(
+        `Emisión bloqueada: sin configuración tributaria activa para botica ${boticaId}`,
+      );
       throw new BadRequestException(
         'La empresa no tiene configuración tributaria activa',
       );
@@ -150,6 +156,9 @@ export class ComprobanteValidationService {
       configuracion.certificado_fecha_vencimiento &&
       configuracion.certificado_fecha_vencimiento < new Date()
     ) {
+      this.logger.warn(
+        `Emisión bloqueada: certificado digital vencido para botica ${boticaId}`,
+      );
       throw new BadRequestException('El certificado digital está vencido');
     }
 
@@ -159,6 +168,9 @@ export class ComprobanteValidationService {
       dto.tipoComprobante,
     );
     if (motivoBloqueo) {
+      this.logger.warn(
+        `Emisión bloqueada por régimen: ${motivoBloqueo} (botica ${boticaId})`,
+      );
       throw new BadRequestException(motivoBloqueo);
     }
 
