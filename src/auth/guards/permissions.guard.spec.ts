@@ -60,9 +60,7 @@ describe('PermissionsGuard', () => {
     ]);
 
     const ctx = mockContext(undefined, BOTICA_ID);
-    await expect(guard.canActivate(ctx)).rejects.toThrow(
-      ForbiddenException,
-    );
+    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
   });
 
   it('lanza ForbiddenException cuando el usuario no tiene id', async () => {
@@ -71,9 +69,7 @@ describe('PermissionsGuard', () => {
     ]);
 
     const ctx = mockContext({ rol: 'CAJERO' }, BOTICA_ID);
-    await expect(guard.canActivate(ctx)).rejects.toThrow(
-      ForbiddenException,
-    );
+    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
   });
 
   it('permite acceso al usuario con rol ADMINISTRADOR', async () => {
@@ -81,10 +77,7 @@ describe('PermissionsGuard', () => {
       'ventas.crear',
     ]);
 
-    const ctx = mockContext(
-      { id: USER_ID, rol: 'ADMINISTRADOR' },
-      BOTICA_ID,
-    );
+    const ctx = mockContext({ id: USER_ID, rol: 'ADMINISTRADOR' }, BOTICA_ID);
     const result = await guard.canActivate(ctx);
     expect(result).toBe(true);
     expect(prismaMock.usuarios.findFirst).not.toHaveBeenCalled();
@@ -105,10 +98,7 @@ describe('PermissionsGuard', () => {
       'ventas.crear',
     ]);
 
-    const ctx = mockContext(
-      { id: USER_ID, rol: 'PROPIETARIO' },
-      BOTICA_ID,
-    );
+    const ctx = mockContext({ id: USER_ID, rol: 'PROPIETARIO' }, BOTICA_ID);
     const result = await guard.canActivate(ctx);
     expect(result).toBe(true);
   });
@@ -118,10 +108,7 @@ describe('PermissionsGuard', () => {
       'ventas.crear',
     ]);
 
-    const ctx = mockContext(
-      { id: USER_ID, rol: 'SUPER_ADMIN' },
-      BOTICA_ID,
-    );
+    const ctx = mockContext({ id: USER_ID, rol: 'SUPER_ADMIN' }, BOTICA_ID);
     const result = await guard.canActivate(ctx);
     expect(result).toBe(true);
   });
@@ -131,13 +118,8 @@ describe('PermissionsGuard', () => {
       'ventas.crear',
     ]);
 
-    const ctx = mockContext(
-      { id: USER_ID, rol: 'CAJERO' },
-      undefined,
-    );
-    await expect(guard.canActivate(ctx)).rejects.toThrow(
-      ForbiddenException,
-    );
+    const ctx = mockContext({ id: USER_ID, rol: 'CAJERO' }, undefined);
+    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
   });
 
   it('lanza ForbiddenException cuando el usuario no existe en la BD', async () => {
@@ -146,13 +128,8 @@ describe('PermissionsGuard', () => {
     ]);
     prismaMock.usuarios.findFirst.mockResolvedValue(null);
 
-    const ctx = mockContext(
-      { id: USER_ID, rol: 'CAJERO' },
-      BOTICA_ID,
-    );
-    await expect(guard.canActivate(ctx)).rejects.toThrow(
-      ForbiddenException,
-    );
+    const ctx = mockContext({ id: USER_ID, rol: 'CAJERO' }, BOTICA_ID);
+    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
   });
 
   it('lanza ForbiddenException cuando el usuario no tiene rol', async () => {
@@ -164,13 +141,8 @@ describe('PermissionsGuard', () => {
       roles: null,
     });
 
-    const ctx = mockContext(
-      { id: USER_ID, rol: 'CAJERO' },
-      BOTICA_ID,
-    );
-    await expect(guard.canActivate(ctx)).rejects.toThrow(
-      ForbiddenException,
-    );
+    const ctx = mockContext({ id: USER_ID, rol: 'CAJERO' }, BOTICA_ID);
+    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
   });
 
   it('permite acceso cuando el usuario tiene todos los permisos requeridos', async () => {
@@ -204,10 +176,7 @@ describe('PermissionsGuard', () => {
       },
     });
 
-    const ctx = mockContext(
-      { id: USER_ID, rol: 'CAJERO' },
-      BOTICA_ID,
-    );
+    const ctx = mockContext({ id: USER_ID, rol: 'CAJERO' }, BOTICA_ID);
     const result = await guard.canActivate(ctx);
     expect(result).toBe(true);
   });
@@ -231,13 +200,8 @@ describe('PermissionsGuard', () => {
       },
     });
 
-    const ctx = mockContext(
-      { id: USER_ID, rol: 'CAJERO' },
-      BOTICA_ID,
-    );
-    await expect(guard.canActivate(ctx)).rejects.toThrow(
-      ForbiddenException,
-    );
+    const ctx = mockContext({ id: USER_ID, rol: 'CAJERO' }, BOTICA_ID);
+    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
   });
 
   it('lanza ForbiddenException cuando el permiso está soft-deleted', async () => {
@@ -258,19 +222,12 @@ describe('PermissionsGuard', () => {
       },
     });
 
-    const ctx = mockContext(
-      { id: USER_ID, rol: 'CAJERO' },
-      BOTICA_ID,
-    );
-    await expect(guard.canActivate(ctx)).rejects.toThrow(
-      ForbiddenException,
-    );
+    const ctx = mockContext({ id: USER_ID, rol: 'CAJERO' }, BOTICA_ID);
+    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
   });
 
   it('usa botica_id del request si no está en user', async () => {
-    (reflector.getAllAndOverride as jest.Mock).mockReturnValue([
-      'ventas.ver',
-    ]);
+    (reflector.getAllAndOverride as jest.Mock).mockReturnValue(['ventas.ver']);
     prismaMock.usuarios.findFirst.mockResolvedValue({
       id: USER_ID,
       roles: {
@@ -285,10 +242,7 @@ describe('PermissionsGuard', () => {
       },
     });
 
-    const ctx = mockContext(
-      { id: USER_ID, rol: 'CAJERO' },
-      BOTICA_ID,
-    );
+    const ctx = mockContext({ id: USER_ID, rol: 'CAJERO' }, BOTICA_ID);
     await guard.canActivate(ctx);
 
     expect(prismaMock.usuarios.findFirst).toHaveBeenCalledWith({
@@ -303,9 +257,7 @@ describe('PermissionsGuard', () => {
   });
 
   it('usa botica_id de user cuando request.botica_id es undefined', async () => {
-    (reflector.getAllAndOverride as jest.Mock).mockReturnValue([
-      'ventas.ver',
-    ]);
+    (reflector.getAllAndOverride as jest.Mock).mockReturnValue(['ventas.ver']);
     prismaMock.usuarios.findFirst.mockResolvedValue({
       id: USER_ID,
       roles: {

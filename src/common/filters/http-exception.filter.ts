@@ -39,6 +39,10 @@ export class HttpExceptionFilter implements ExceptionFilter {
       const err = exception as any;
       // Tratar errores de Prisma de forma segura sin exponer stack traces
       if (err.code === 'P2002') {
+        this.logger.error(
+          `Prisma P2002 Unique Violation: ${err.message}`,
+          JSON.stringify(err.meta),
+        );
         status = HttpStatus.CONFLICT;
         const target = err.meta?.target;
         let targetStr = '';

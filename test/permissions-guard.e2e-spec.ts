@@ -84,10 +84,7 @@ async function createApp(
 ): Promise<INestApplication<App>> {
   const module: TestingModule = await Test.createTestingModule({
     controllers: [TestPermissionsController],
-    providers: [
-      Reflector,
-      { provide: PrismaService, useValue: prisma },
-    ],
+    providers: [Reflector, { provide: PrismaService, useValue: prisma }],
   }).compile();
 
   const app = module.createNestApplication();

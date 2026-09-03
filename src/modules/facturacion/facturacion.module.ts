@@ -22,9 +22,10 @@ import {
 import { PdfGeneratorService } from './pdf/pdf-generator.service';
 import { EncryptionService } from '../../common/security/encryption.service';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { StorageModule } from '../storage/storage.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, StorageModule],
   controllers: [
     FacturacionController,
     ConfiguracionTributariaController,

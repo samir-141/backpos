@@ -27,8 +27,7 @@ export class SeriesDocumentosController {
 
   @Get()
   @RequirePermissions('series.ver')
-  @ApiOperation({
-  })
+  @ApiOperation({})
   async listar(@Request() req: any) {
     const list = await this.seriesDocumentosService.listar(req.botica_id);
     return { data: list };

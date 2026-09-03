@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { promises as fs } from 'fs';
 import * as path from 'path';
+import { StorageService } from '../../storage/storage.service';
 
 /** Contrato de almacenamiento de artefactos tributarios. */
 export interface FileStorageProvider {
@@ -59,11 +60,17 @@ export class LocalFileStorageProvider implements FileStorageProvider {
 
 /**
  * Rutas y persistencia de artefactos de un comprobante:
- * storage/empresas/{ruc}/{año}/{mes}/{tipo}-{serie}-{correlativo}/...
+ * Local: storage/empresas/{ruc}/{año}/{mes}/{tipo}-{serie}-{correlativo}/...
+ * Supabase Storage: boticas-private/empresas/{ruc}/...
  */
 @Injectable()
 export class ComprobanteStorageService {
-  constructor(private readonly storage: LocalFileStorageProvider) {}
+  private readonly logger = new Logger(ComprobanteStorageService.name);
+
+  constructor(
+    private readonly storage: LocalFileStorageProvider,
+    @Optional() private readonly supabaseStorage?: StorageService,
+  ) {}
 
   directorioComprobante(
     ruc: string,
@@ -75,49 +82,127 @@ export class ComprobanteStorageService {
     return path.posix.join('empresas', ruc, String(anio), mes, nombreArchivo);
   }
 
-  guardarXml(dir: string, xml: string): Promise<string> {
-    return this.storage.save(
-      path.posix.join(dir, 'original.xml'),
-      Buffer.from(xml, 'utf8'),
-    );
+  async guardarXml(dir: string, xml: string): Promise<string> {
+    const relPath = path.posix.join(dir, 'original.xml');
+    const buffer = Buffer.from(xml, 'utf8');
+    const local = await this.storage.save(relPath, buffer);
+    if (this.supabaseStorage) {
+      this.supabaseStorage
+        .subirRutaDirecta('boticas-private', relPath, buffer, 'application/xml')
+        .catch((e) =>
+          this.logger.warn(`Supabase XML sync aviso: ${e.message}`),
+        );
+    }
+    return local;
   }
 
-  guardarXmlFirmado(dir: string, xml: string): Promise<string> {
-    return this.storage.save(
-      path.posix.join(dir, 'firmado.xml'),
-      Buffer.from(xml, 'utf8'),
-    );
+  async guardarXmlFirmado(dir: string, xml: string): Promise<string> {
+    const relPath = path.posix.join(dir, 'firmado.xml');
+    const buffer = Buffer.from(xml, 'utf8');
+    const local = await this.storage.save(relPath, buffer);
+    if (this.supabaseStorage) {
+      this.supabaseStorage
+        .subirRutaDirecta('boticas-private', relPath, buffer, 'application/xml')
+        .catch((e) =>
+          this.logger.warn(`Supabase Signed XML sync aviso: ${e.message}`),
+        );
+    }
+    return local;
   }
 
-  guardarZip(dir: string, zip: Buffer): Promise<string> {
-    return this.storage.save(path.posix.join(dir, 'comprobante.zip'), zip);
+  async guardarZip(dir: string, zip: Buffer): Promise<string> {
+    const relPath = path.posix.join(dir, 'comprobante.zip');
+    const local = await this.storage.save(relPath, zip);
+    if (this.supabaseStorage) {
+      this.supabaseStorage
+        .subirRutaDirecta('boticas-private', relPath, zip, 'application/zip')
+        .catch((e) =>
+          this.logger.warn(`Supabase ZIP sync aviso: ${e.message}`),
+        );
+    }
+    return local;
   }
 
-  guardarCdrZip(dir: string, zip: Buffer): Promise<string> {
-    return this.storage.save(path.posix.join(dir, 'cdr.zip'), zip);
+  async guardarCdrZip(dir: string, zip: Buffer): Promise<string> {
+    const relPath = path.posix.join(dir, 'cdr.zip');
+    const local = await this.storage.save(relPath, zip);
+    if (this.supabaseStorage) {
+      this.supabaseStorage
+        .subirRutaDirecta('boticas-private', relPath, zip, 'application/zip')
+        .catch((e) =>
+          this.logger.warn(`Supabase CDR sync aviso: ${e.message}`),
+        );
+    }
+    return local;
   }
 
-  guardarCdrXml(dir: string, xml: string): Promise<string> {
-    return this.storage.save(
-      path.posix.join(dir, 'cdr.xml'),
-      Buffer.from(xml, 'utf8'),
-    );
+  async guardarCdrXml(dir: string, xml: string): Promise<string> {
+    const relPath = path.posix.join(dir, 'cdr.xml');
+    const buffer = Buffer.from(xml, 'utf8');
+    const local = await this.storage.save(relPath, buffer);
+    if (this.supabaseStorage) {
+      this.supabaseStorage
+        .subirRutaDirecta('boticas-private', relPath, buffer, 'application/xml')
+        .catch((e) =>
+          this.logger.warn(`Supabase CDR XML sync aviso: ${e.message}`),
+        );
+    }
+    return local;
   }
 
-  guardarPdf(dir: string, pdf: Buffer): Promise<string> {
-    return this.storage.save(path.posix.join(dir, 'comprobante.pdf'), pdf);
+  async guardarPdf(dir: string, pdf: Buffer): Promise<string> {
+    const relPath = path.posix.join(dir, 'comprobante.pdf');
+    const local = await this.storage.save(relPath, pdf);
+    if (this.supabaseStorage) {
+      this.supabaseStorage
+        .subirRutaDirecta('boticas-public', relPath, pdf, 'application/pdf')
+        .catch((e) =>
+          this.logger.warn(`Supabase PDF sync aviso: ${e.message}`),
+        );
+    }
+    return local;
   }
 
-  leer(relativePath: string): Promise<Buffer> {
-    return this.storage.read(relativePath);
+  async leer(relativePath: string): Promise<Buffer> {
+    try {
+      return await this.storage.read(relativePath);
+    } catch (localErr) {
+      if (this.supabaseStorage) {
+        // Intentar descargar desde Supabase Storage
+        const remoteBuffer =
+          (await this.supabaseStorage.descargarRutaDirecta(
+            'boticas-private',
+            relativePath,
+          )) ||
+          (await this.supabaseStorage.descargarRutaDirecta(
+            'boticas-public',
+            relativePath,
+          ));
+        if (remoteBuffer) {
+          await this.storage.save(relativePath, remoteBuffer).catch(() => {});
+          return remoteBuffer;
+        }
+      }
+      throw localErr;
+    }
   }
 
   /** Guardado genérico (p.ej. certificado digital). */
-  guardar(relativePath: string, contenido: Buffer): Promise<string> {
-    return this.storage.save(relativePath, contenido);
+  async guardar(relativePath: string, contenido: Buffer): Promise<string> {
+    const local = await this.storage.save(relativePath, contenido);
+    if (this.supabaseStorage) {
+      this.supabaseStorage
+        .subirRutaDirecta('boticas-private', relativePath, contenido)
+        .catch((e) =>
+          this.logger.warn(`Supabase generic sync aviso: ${e.message}`),
+        );
+    }
+    return local;
   }
 
-  existe(relativePath: string): Promise<boolean> {
-    return this.storage.exists(relativePath);
+  async existe(relativePath: string): Promise<boolean> {
+    const existsLocal = await this.storage.exists(relativePath);
+    if (existsLocal) return true;
+    return false;
   }
 }

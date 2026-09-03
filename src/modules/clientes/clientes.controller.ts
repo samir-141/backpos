@@ -29,8 +29,7 @@ export class ClientesController {
 
   @Get()
   @RequirePermissions('clientes.ver')
-  @ApiOperation({
-  })
+  @ApiOperation({})
   findAll(@Request() req: any, @Query() query: QueryClientesDto) {
     return this.clientesService.findAll(req.botica_id, query);
   }
@@ -62,8 +61,7 @@ export class ClientesController {
 
   @Get(':id')
   @RequirePermissions('clientes.ver')
-  @ApiOperation({
-  })
+  @ApiOperation({})
   findOne(@Param('id') id: string, @Request() req: any) {
     return this.clientesService.findOne(req.botica_id, id);
   }

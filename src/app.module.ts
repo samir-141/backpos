@@ -28,6 +28,7 @@ import { ProveedoresModule } from './modules/proveedores/proveedores.module';
 import { ComprobantesImpresionModule } from './modules/comprobantes-impresion/comprobantes-impresion.module';
 import { PrintingQzModule } from './modules/printing-qz/printing-qz.module';
 import { QzSecurityModule } from './modules/qz-security/qz-security.module';
+import { StorageModule } from './modules/storage/storage.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { QzSecurityModule } from './modules/qz-security/qz-security.module';
     ComprobantesImpresionModule,
     PrintingQzModule,
     QzSecurityModule,
+    StorageModule,
   ],
   controllers: [AppController],
   providers: [
