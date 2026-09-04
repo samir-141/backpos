@@ -228,6 +228,7 @@ model boticas {
   compras                               compras[]
   comprobantes_electronicos             comprobantes_electronicos[]
   configuraciones_tributarias           configuraciones_tributarias?
+  perfiles_tributarios                  perfiles_tributarios[]
   detalle_venta_lotes                   detalle_venta_lotes[]
   detalles_compras                      detalles_compras[]
   detalles_ventas                       detalles_ventas[]
@@ -956,6 +957,7 @@ model historial_precios {
 model series_documentos {
   id                        String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   botica_id                 String                      @db.Uuid
+  perfil_tributario_id      String?                     @db.Uuid
   tipo_documento            String                      @db.VarChar(20)
   serie                     String                      @db.VarChar(10)
   correlativo_inicial       Int                         @default(1)
@@ -970,9 +972,11 @@ model series_documentos {
   version                   Int                         @default(1)
   comprobantes_electronicos comprobantes_electronicos[]
   boticas                   boticas                     @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
+  perfiles_tributarios      perfiles_tributarios?       @relation(fields: [perfil_tributario_id], references: [id], onUpdate: NoAction)
 
   @@unique([serie, tipo_documento, sucursal_id], map: "series_documentos_serie_unica")
   @@index([botica_id], map: "idx_series_documentos_botica_id")
+  @@index([perfil_tributario_id], map: "idx_series_documentos_perfil_id")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -980,6 +984,7 @@ model series_documentos {
 model ventas {
   id                                   String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   botica_id                            String                      @db.Uuid
+  perfil_tributario_id                 String?                     @db.Uuid
   cliente_id                           String?                     @db.Uuid
   usuario_id                           String                      @db.Uuid
   caja_id                              String                      @db.Uuid
@@ -1001,6 +1006,7 @@ model ventas {
   detalles_ventas                      detalles_ventas[]
   pagos                                pagos[]
   boticas                              boticas                     @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
+  perfiles_tributarios                 perfiles_tributarios?       @relation(fields: [perfil_tributario_id], references: [id], onUpdate: NoAction)
   cajas                                cajas                       @relation(fields: [caja_id], references: [id], onUpdate: NoAction)
   clientes                             clientes?                   @relation(fields: [cliente_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   usuarios_ventas_created_byTousuarios usuarios?                   @relation("ventas_created_byTousuarios", fields: [created_by], references: [id], onUpdate: NoAction)
@@ -1010,6 +1016,7 @@ model ventas {
 
   @@unique([botica_id, idempotency_key], map: "uq_ventas_botica_idempotency_key", where: raw("(idempotency_key IS NOT NULL)"))
   @@index([botica_id], map: "idx_ventas_botica_id")
+  @@index([perfil_tributario_id], map: "idx_ventas_perfil_tributario_id")
   @@index([caja_id], map: "idx_ventas_caja_id", where: raw("(deleted_at IS NULL)"))
   @@index([cliente_id], map: "idx_ventas_cliente_id", where: raw("(deleted_at IS NULL)"))
   @@index([fecha], map: "idx_ventas_fecha", where: raw("(deleted_at IS NULL)"))
@@ -1037,6 +1044,7 @@ model comprobantes_publicos {
 model comprobantes_electronicos {
   id                                 String                               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   botica_id                          String                               @db.Uuid
+  perfil_tributario_id               String?                              @db.Uuid
   sucursal_id                        String                               @db.Uuid
   venta_id                           String                               @db.Uuid
   cliente_id                         String?                              @db.Uuid
@@ -1086,6 +1094,7 @@ model comprobantes_electronicos {
   updated_by                         String?                              @db.Uuid
   version                            Int                                  @default(1)
   empresas                           boticas                              @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
+  perfiles_tributarios               perfiles_tributarios?                @relation(fields: [perfil_tributario_id], references: [id], onUpdate: NoAction)
   clientes                           clientes?                            @relation(fields: [cliente_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   comprobantes_electronicos          comprobantes_electronicos?           @relation("comprobantes_electronicosTocomprobantes_electronicos", fields: [comprobante_referencia_id], references: [id], onUpdate: NoAction)
   other_comprobantes_electronicos    comprobantes_electronicos[]          @relation("comprobantes_electronicosTocomprobantes_electronicos")
@@ -1099,6 +1108,7 @@ model comprobantes_electronicos {
   @@unique([botica_id, tipo_comprobante, serie, correlativo], map: "uq_comprobantes_electronicos_numero")
   @@unique([venta_id, tipo_comprobante], map: "uq_comprobantes_electronicos_venta_tipo")
   @@index([botica_id], map: "idx_comprobantes_electronicos_botica_id")
+  @@index([perfil_tributario_id], map: "idx_comprobantes_electronicos_perfil_id")
   @@index([botica_id, sucursal_id, fecha_emision], map: "idx_comprobantes_electronicos_emision")
   @@index([estado], map: "idx_comprobantes_electronicos_estado")
   @@index([venta_id], map: "idx_comprobantes_electronicos_venta_id")
@@ -1261,4 +1271,65 @@ model resumenes_diarios_detalles {
 
   @@unique([resumen_id, comprobante_id], map: "uq_resumenes_detalles_resumen_comprobante")
   @@index([comprobante_id], map: "idx_resumenes_detalles_comprobante_id")
+}
+
+model perfiles_tributarios {
+  id                            String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  botica_id                     String                        @db.Uuid
+  ruc                           String                        @db.VarChar(11)
+  razon_social                  String                        @db.VarChar(200)
+  nombre_comercial              String?                       @db.VarChar(200)
+  tipo_contribuyente            String                        @default("PERSONA_NATURAL") @db.VarChar(30)
+  regimen_tributario            String                        @default("NRUS") @db.VarChar(30)
+  direccion_fiscal              String                        @db.VarChar(250)
+  ubigeo                        String?                       @db.VarChar(6)
+  departamento                  String?                       @db.VarChar(100)
+  provincia                     String?                       @db.VarChar(100)
+  distrito                      String?                       @db.VarChar(100)
+  telefono                      String?                       @db.VarChar(20)
+  email                         String?                       @db.VarChar(100)
+  estado_sunat                  String?                       @default("ACTIVO") @db.VarChar(50)
+  condicion_sunat               String?                       @default("HABIDO") @db.VarChar(50)
+  es_principal                  Boolean                       @default(false)
+  activo                        Boolean                       @default(true)
+  created_at                    DateTime?                     @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime?                     @default(now()) @db.Timestamptz(6)
+  deleted_at                    DateTime?                     @db.Timestamptz(6)
+  created_by                    String?                       @db.Uuid
+  updated_by                    String?                       @db.Uuid
+  version                       Int                           @default(1)
+  boticas                       boticas                       @relation(fields: [botica_id], references: [id], onUpdate: NoAction)
+  configuracion_emision         configuraciones_emision?
+  series_documentos             series_documentos[]
+  comprobantes_electronicos     comprobantes_electronicos[]
+  ventas                        ventas[]
+
+  @@unique([botica_id, ruc], map: "uq_perfiles_tributarios_botica_ruc", where: raw("(deleted_at IS NULL)"))
+  @@index([botica_id], map: "idx_perfiles_tributarios_botica_id")
+  @@index([ruc], map: "idx_perfiles_tributarios_ruc")
+}
+
+model configuraciones_emision {
+  id                            String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  perfil_tributario_id          String               @unique(map: "uq_config_emision_perfil") @db.Uuid
+  sistema_emision               String               @default("SEE_CONTRIBUYENTE") @db.VarChar(40)
+  proveedor_tipo                String               @default("SUNAT_DIRECTO") @db.VarChar(40)
+  ambiente                      String               @default("BETA") @db.VarChar(20)
+  sol_usuario_encriptado        String?
+  sol_clave_encriptada          String?
+  certificado_nombre            String?              @db.VarChar(200)
+  certificado_path              String?
+  certificado_clave_encriptada  String?
+  certificado_fecha_vencimiento DateTime?            @db.Timestamptz(6)
+  pse_id                        String?              @db.VarChar(100)
+  ose_id                        String?              @db.VarChar(100)
+  verificado                    Boolean              @default(false)
+  activo                        Boolean              @default(true)
+  created_at                    DateTime?            @default(now()) @db.Timestamptz(6)
+  updated_at                    DateTime?            @default(now()) @db.Timestamptz(6)
+  deleted_at                    DateTime?            @db.Timestamptz(6)
+  created_by                    String?              @db.Uuid
+  updated_by                    String?              @db.Uuid
+  version                       Int                  @default(1)
+  perfil_tributario             perfiles_tributarios @relation(fields: [perfil_tributario_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 }

@@ -10,6 +10,7 @@ import { AuditService } from '../audit/audit.service';
 import { EventsGateway } from '../../socket/events.gateway';
 import { randomBytes, randomUUID } from 'crypto';
 import { hashSnapshot } from '../comprobantes-publicos/comprobantes-publicos.service';
+import { isPreviousDayInLima } from '../cajas/utils/date-caja.utils';
 
 @Injectable()
 export class VentasService {
@@ -81,7 +82,12 @@ export class VentasService {
       'EFECTIVO';
     const numeroComp =
       snapshot.numero_comprobante ||
-      `NV01-${String(venta.id).replace(/[^0-9]/g, '').padStart(8, '0').slice(-8) || '00000001'}`;
+      `NV01-${
+        String(venta.id)
+          .replace(/[^0-9]/g, '')
+          .padStart(8, '0')
+          .slice(-8) || '00000001'
+      }`;
     return {
       exito: true,
       idempotente: true,
@@ -213,6 +219,79 @@ export class VentasService {
                 created_by: finalUsuarioId,
               },
             });
+          }
+
+          if (caja.estado === 'ABIERTA' && tx.movimientos_caja) {
+            const ultimaApertura = await tx.movimientos_caja.findFirst({
+              where: { caja_id: caja.id, tipo: 'APERTURA', deleted_at: null },
+              orderBy: { fecha: 'desc' },
+            });
+            if (
+              ultimaApertura?.fecha &&
+              isPreviousDayInLima(ultimaApertura.fecha)
+            ) {
+              await tx.cajas.updateMany({
+                where: {
+                  id: caja.id,
+                  botica_id: boticaId,
+                  sucursal_id: finalSucursalId,
+                  estado: 'ABIERTA',
+                  deleted_at: null,
+                },
+                data: {
+                  estado: 'CERRADA',
+                  updated_by: finalUsuarioId,
+                },
+              });
+
+              const [movimientos, ventasPrevias] = await Promise.all([
+                tx.movimientos_caja.findMany({
+                  where: {
+                    caja_id: caja.id,
+                    fecha: { gte: ultimaApertura.fecha },
+                    deleted_at: null,
+                  },
+                }),
+                tx.ventas.findMany({
+                  where: {
+                    caja_id: caja.id,
+                    fecha: { gte: ultimaApertura.fecha },
+                    deleted_at: null,
+                  },
+                  include: { pagos: { include: { metodos_pago: true } } },
+                }),
+              ]);
+
+              let totalEfectivo = Number(ultimaApertura.monto || 0);
+              for (const m of movimientos) {
+                if (m.tipo === 'INGRESO') totalEfectivo += Number(m.monto);
+                if (m.tipo === 'EGRESO') totalEfectivo -= Number(m.monto);
+              }
+              for (const v of ventasPrevias) {
+                for (const p of v.pagos) {
+                  const nombre = (
+                    p.metodos_pago?.nombre || 'EFECTIVO'
+                  ).toUpperCase();
+                  if (nombre.includes('EFECTIVO'))
+                    totalEfectivo += Number(p.monto);
+                }
+              }
+
+              await tx.movimientos_caja.create({
+                data: {
+                  caja_id: caja.id,
+                  botica_id: boticaId,
+                  usuario_id: finalUsuarioId,
+                  tipo: 'CIERRE',
+                  monto: totalEfectivo,
+                  observacion:
+                    'Cierre automático por cambio de día (Sistema) | [EXACTO: S/ 0.00]',
+                  created_by: finalUsuarioId,
+                },
+              });
+
+              caja.estado = 'CERRADA';
+            }
           }
 
           if (caja.estado === 'CERRADA') {
@@ -384,10 +463,46 @@ export class VentasService {
             );
           }
 
+          // Resolver Perfil Tributario (Multi-RUC)
+          let finalPerfilTributarioId: string | null = null;
+          if (dto.perfil_tributario_id) {
+            if (tx.perfiles_tributarios?.findFirst) {
+              const perfil = await tx.perfiles_tributarios.findFirst({
+                where: {
+                  id: dto.perfil_tributario_id,
+                  botica_id: boticaId,
+                  activo: true,
+                  deleted_at: null,
+                },
+              });
+              if (!perfil) {
+                throw new BadRequestException(
+                  'El perfil tributario emisor seleccionado no existe o no está activo.',
+                );
+              }
+              finalPerfilTributarioId = perfil.id;
+            } else {
+              finalPerfilTributarioId = dto.perfil_tributario_id;
+            }
+          } else if (tx.perfiles_tributarios?.findFirst) {
+            const perfilPrincipal = await tx.perfiles_tributarios.findFirst({
+              where: {
+                botica_id: boticaId,
+                activo: true,
+                deleted_at: null,
+              },
+              orderBy: [{ es_principal: 'desc' }, { created_at: 'asc' }],
+            });
+            if (perfilPrincipal) {
+              finalPerfilTributarioId = perfilPrincipal.id;
+            }
+          }
+
           // 5. Crear la cabecera de la venta con importes calculados por el servidor.
           const venta = await tx.ventas.create({
             data: {
               botica_id: boticaId,
+              perfil_tributario_id: finalPerfilTributarioId,
               idempotency_key: idempotencyKey,
               cliente_id: clienteId,
               usuario_id: finalUsuarioId,
@@ -618,93 +733,102 @@ export class VentasService {
             }),
           ]);
 
-        // Generar correlativo atómico para Nota de Venta
-        let numeroComprobanteNotaVenta = `NV01-${String(venta.id).replace(/[^0-9]/g, '').padStart(8, '0').slice(-8) || '00000001'}`;
-        let correlativoNum = 1;
-        if (tx.correlativos?.upsert) {
-          const correlativoNv = await tx.correlativos.upsert({
-            where: {
-              botica_id_tipo: { botica_id: boticaId, tipo: 'NOTA_VENTA' },
-            },
-            update: { ultimo_numero: { increment: 1 } },
-            create: { botica_id: boticaId, tipo: 'NOTA_VENTA', ultimo_numero: 1 },
-            select: { ultimo_numero: true },
-          });
-          correlativoNum = correlativoNv.ultimo_numero;
-          numeroComprobanteNotaVenta = `NV01-${String(correlativoNum).padStart(8, '0')}`;
-        }
+          // Generar correlativo atómico para Nota de Venta
+          let numeroComprobanteNotaVenta = `NV01-${
+            String(venta.id)
+              .replace(/[^0-9]/g, '')
+              .padStart(8, '0')
+              .slice(-8) || '00000001'
+          }`;
+          let correlativoNum = 1;
+          if (tx.correlativos?.upsert) {
+            const correlativoNv = await tx.correlativos.upsert({
+              where: {
+                botica_id_tipo: { botica_id: boticaId, tipo: 'NOTA_VENTA' },
+              },
+              update: { ultimo_numero: { increment: 1 } },
+              create: {
+                botica_id: boticaId,
+                tipo: 'NOTA_VENTA',
+                ultimo_numero: 1,
+              },
+              select: { ultimo_numero: true },
+            });
+            correlativoNum = correlativoNv.ultimo_numero;
+            numeroComprobanteNotaVenta = `NV01-${String(correlativoNum).padStart(8, '0')}`;
+          }
 
-        const snapshot = {
-          version: 'a4-v1',
-          venta_id: venta.id,
-          numero_comprobante: numeroComprobanteNotaVenta,
-          emitido_at: venta.fecha,
-          tipo_comprobante: dto.tipo_comprobante,
-          metodo_pago: metodoPagoNombre,
-          emisor: boticaSnapshot,
-          cliente: cliente
-            ? {
-                nombre: cliente.nombre,
-                documento: `${cliente.tipo_documento}: ${cliente.numero_documento}`,
-                direccion: cliente.direccion,
-              }
-            : { nombre: 'CLIENTE GENERAL' },
-          items: detallesSnapshot.map((d) => ({
-            descripcion:
-              d.productos_presentaciones.productos_comerciales
-                .nombre_comercial,
-            presentacion:
-              d.productos_presentaciones.unidades_presentacion.nombre,
-            cantidad: d.cantidad,
-            precio_unitario: Number(d.precio_unitario_presentacion),
-            subtotal: Number(d.subtotal),
-          })),
-          totales: {
-            subtotal: Number(venta.subtotal),
-            igv: Number(venta.igv),
-            total: Number(venta.total),
-          },
-        };
-        const hashDocumento = hashSnapshot(snapshot);
-        const tokenPublico = randomBytes(32).toString('base64url');
-        await tx.comprobantes_publicos.create({
-          data: {
+          const snapshot = {
+            version: 'a4-v1',
             venta_id: venta.id,
-            botica_id: boticaId,
-            token_publico: tokenPublico,
-            plantilla_version: 'a4-v1',
-            snapshot,
-            hash_documento: hashDocumento,
-          },
-        });
+            numero_comprobante: numeroComprobanteNotaVenta,
+            emitido_at: venta.fecha,
+            tipo_comprobante: dto.tipo_comprobante,
+            metodo_pago: metodoPagoNombre,
+            emisor: boticaSnapshot,
+            cliente: cliente
+              ? {
+                  nombre: cliente.nombre,
+                  documento: `${cliente.tipo_documento}: ${cliente.numero_documento}`,
+                  direccion: cliente.direccion,
+                }
+              : { nombre: 'CLIENTE GENERAL' },
+            items: detallesSnapshot.map((d) => ({
+              descripcion:
+                d.productos_presentaciones.productos_comerciales
+                  .nombre_comercial,
+              presentacion:
+                d.productos_presentaciones.unidades_presentacion.nombre,
+              cantidad: d.cantidad,
+              precio_unitario: Number(d.precio_unitario_presentacion),
+              subtotal: Number(d.subtotal),
+            })),
+            totales: {
+              subtotal: Number(venta.subtotal),
+              igv: Number(venta.igv),
+              total: Number(venta.total),
+            },
+          };
+          const hashDocumento = hashSnapshot(snapshot);
+          const tokenPublico = randomBytes(32).toString('base64url');
+          await tx.comprobantes_publicos.create({
+            data: {
+              venta_id: venta.id,
+              botica_id: boticaId,
+              token_publico: tokenPublico,
+              plantilla_version: 'a4-v1',
+              snapshot,
+              hash_documento: hashDocumento,
+            },
+          });
 
-        return {
-          exito: true,
-          idempotente: false,
-          mensaje: 'Venta registrada correctamente',
-          venta_id: venta.id,
-          idempotency_key: idempotencyKey,
-          estado: venta.estado,
-          subtotal: subtotalCalculado,
-          igv: igvCalculado,
-          total: totalCalculado,
-          tipo_comprobante: dto.tipo_comprobante,
-          numero_comprobante: numeroComprobanteNotaVenta,
-          comprobante: {
-            serie: 'NV01',
-            correlativo: correlativoNum,
-            serie_numero: numeroComprobanteNotaVenta,
-          },
-          metodo_pago: metodoPagoNombre,
-          comprobante_token: tokenPublico,
-          comprobante_url: `/c/${tokenPublico}`,
-          _meta: {
-            finalUsuarioId,
-            finalSucursalId,
-            totalCalculado,
-            metodoPagoNombre,
-          },
-        };
+          return {
+            exito: true,
+            idempotente: false,
+            mensaje: 'Venta registrada correctamente',
+            venta_id: venta.id,
+            idempotency_key: idempotencyKey,
+            estado: venta.estado,
+            subtotal: subtotalCalculado,
+            igv: igvCalculado,
+            total: totalCalculado,
+            tipo_comprobante: dto.tipo_comprobante,
+            numero_comprobante: numeroComprobanteNotaVenta,
+            comprobante: {
+              serie: 'NV01',
+              correlativo: correlativoNum,
+              serie_numero: numeroComprobanteNotaVenta,
+            },
+            metodo_pago: metodoPagoNombre,
+            comprobante_token: tokenPublico,
+            comprobante_url: `/c/${tokenPublico}`,
+            _meta: {
+              finalUsuarioId,
+              finalSucursalId,
+              totalCalculado,
+              metodoPagoNombre,
+            },
+          };
         },
         {
           maxWait: 5000,
@@ -936,6 +1060,14 @@ export class VentasService {
           include: { metodos_pago: true },
         },
         clientes: true,
+        perfiles_tributarios: {
+          select: {
+            id: true,
+            ruc: true,
+            razon_social: true,
+            regimen_tributario: true,
+          },
+        },
       },
       orderBy: { fecha: 'desc' },
       take: 50,
@@ -960,6 +1092,7 @@ export class VentasService {
           include: { metodos_pago: true },
         },
         clientes: true,
+        perfiles_tributarios: true,
       },
     });
 

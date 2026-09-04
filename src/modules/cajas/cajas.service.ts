@@ -12,6 +12,8 @@ import {
 } from './dto/cajas.dto';
 import { RealtimeService } from '../../socket/realtime.service';
 
+import { isPreviousDayInLima } from './utils/date-caja.utils';
+
 interface CajaContext {
   boticaId: string;
   usuarioId: string;
@@ -200,6 +202,152 @@ export class CajasService {
     };
   }
 
+  /**
+   * Cierra automáticamente una caja si su fecha de apertura corresponde a un día anterior (en hora de Perú).
+   * Ejecuta dentro de una transacción ya bloqueada.
+   */
+  async autoCerrarCajaSiDiaAnteriorTx(
+    tx: any,
+    caja: any,
+    boticaId: string,
+    sucursalId: string,
+    usuarioId?: string,
+  ) {
+    if (!caja || caja.estado !== 'ABIERTA') return caja;
+
+    const ultimaApertura = await tx.movimientos_caja.findFirst({
+      where: { caja_id: caja.id, tipo: 'APERTURA', deleted_at: null },
+      orderBy: { fecha: 'desc' },
+    });
+    if (!ultimaApertura || !ultimaApertura.fecha) return caja;
+
+    if (!isPreviousDayInLima(ultimaApertura.fecha)) {
+      return caja;
+    }
+
+    this.logger.warn(
+      `[AUTO-CIERRE] Cerrando automáticamente caja ${caja.id} (${caja.nombre}) por cambio de día (aperturada: ${ultimaApertura.fecha.toISOString()})`,
+    );
+
+    const estado = await this.buildEstado(tx, caja);
+    const transition = await tx.cajas.updateMany({
+      where: {
+        id: caja.id,
+        botica_id: boticaId,
+        sucursal_id: sucursalId,
+        estado: 'ABIERTA',
+        deleted_at: null,
+      },
+      data: {
+        estado: 'CERRADA',
+        updated_by: usuarioId || ultimaApertura.usuario_id || null,
+      },
+    });
+
+    if (transition.count === 1) {
+      await tx.movimientos_caja.create({
+        data: {
+          caja_id: caja.id,
+          botica_id: boticaId,
+          usuario_id: usuarioId || ultimaApertura.usuario_id || null,
+          tipo: 'CIERRE',
+          monto: estado.efectivo_esperado,
+          observacion:
+            'Cierre automático por cambio de día (Medianoche / Sistema) | [EXACTO: S/ 0.00]',
+          created_by: usuarioId || ultimaApertura.usuario_id || null,
+        },
+      });
+
+      const resumen = {
+        caja_id: caja.id,
+        nombre_caja: caja.nombre,
+        fecha_cierre: new Date().toISOString(),
+        fecha_apertura: estado.fecha_apertura,
+        monto_inicial: estado.monto_inicial,
+        ventas_efectivo: estado.ventas_efectivo,
+        ventas_digitales: estado.ventas_digitales,
+        desglose_metodos: estado.desglose_metodos,
+        ingresos_manuales: estado.ingresos_manuales,
+        egresos_manuales: estado.egresos_manuales,
+        efectivo_esperado: estado.efectivo_esperado,
+        efectivo_contado: estado.efectivo_esperado,
+        diferencia: 0,
+        tipo_diferencia: 'EXACTO',
+        operaciones_count: estado.operaciones_count,
+        observacion: 'Cierre automático por cambio de día (Sistema)',
+      };
+
+      this.realtimeService.notificarCajaCerrada(sucursalId, caja.id, resumen);
+      caja.estado = 'CERRADA';
+    }
+
+    return caja;
+  }
+
+  /**
+   * Ejecuta el escaneo y cierre de todas las cajas abiertas de días anteriores.
+   * Invocado periódicamente y a medianoche por CajasAutoCierreService.
+   */
+  async cerrarTodasCajasDiasAnteriores(): Promise<number> {
+    const cajasAbiertas = await this.prisma.cajas.findMany({
+      where: {
+        estado: 'ABIERTA',
+        deleted_at: null,
+      },
+      select: {
+        id: true,
+        botica_id: true,
+        sucursal_id: true,
+        nombre: true,
+      },
+    });
+
+    let cerradas = 0;
+    for (const c of cajasAbiertas) {
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          await this.lockSucursal(tx, {
+            boticaId: c.botica_id,
+            sucursalId: c.sucursal_id,
+            usuarioId: '',
+          });
+          const caja = await tx.cajas.findUnique({ where: { id: c.id } });
+          if (!caja || caja.estado !== 'ABIERTA') return;
+
+          const ultimaApertura = await tx.movimientos_caja.findFirst({
+            where: { caja_id: caja.id, tipo: 'APERTURA', deleted_at: null },
+            orderBy: { fecha: 'desc' },
+          });
+
+          if (
+            ultimaApertura?.fecha &&
+            isPreviousDayInLima(ultimaApertura.fecha)
+          ) {
+            await this.autoCerrarCajaSiDiaAnteriorTx(
+              tx,
+              caja,
+              c.botica_id,
+              c.sucursal_id,
+            );
+            cerradas++;
+          }
+        });
+      } catch (err: any) {
+        this.logger.error(
+          `Error al auto-cerrar caja ${c.id} (${c.nombre}): ${err.message}`,
+          err.stack,
+        );
+      }
+    }
+
+    if (cerradas > 0) {
+      this.logger.log(
+        `[AUTO-CIERRE] ${cerradas} caja(s) de días anteriores fueron cerradas automáticamente.`,
+      );
+    }
+    return cerradas;
+  }
+
   async getEstadoCaja(
     boticaId: string,
     usuarioId?: string,
@@ -208,7 +356,14 @@ export class CajasService {
     const context = await this.resolveContext(boticaId, usuarioId, sucursalId);
     return this.prisma.$transaction(async (tx) => {
       await this.lockSucursal(tx, context);
-      const caja = await this.getOrCreateCaja(tx, context);
+      let caja = await this.getOrCreateCaja(tx, context);
+      caja = await this.autoCerrarCajaSiDiaAnteriorTx(
+        tx,
+        caja,
+        context.boticaId,
+        context.sucursalId,
+        context.usuarioId,
+      );
       return this.buildEstado(tx, caja);
     });
   }
@@ -227,7 +382,14 @@ export class CajasService {
     const montoInicial = dto?.monto_inicial ?? 0;
     const caja = await this.prisma.$transaction(async (tx) => {
       await this.lockSucursal(tx, context);
-      const actual = await this.getOrCreateCaja(tx, context);
+      let actual = await this.getOrCreateCaja(tx, context);
+      actual = await this.autoCerrarCajaSiDiaAnteriorTx(
+        tx,
+        actual,
+        boticaId,
+        context.sucursalId,
+        context.usuarioId,
+      );
       const transition = await tx.cajas.updateMany({
         where: {
           id: actual.id,
@@ -282,7 +444,14 @@ export class CajasService {
     );
     const movimiento = await this.prisma.$transaction(async (tx) => {
       await this.lockSucursal(tx, context);
-      const caja = await this.getOrCreateCaja(tx, context);
+      let caja = await this.getOrCreateCaja(tx, context);
+      caja = await this.autoCerrarCajaSiDiaAnteriorTx(
+        tx,
+        caja,
+        boticaId,
+        context.sucursalId,
+        context.usuarioId,
+      );
       const abierta = await tx.cajas.count({
         where: { id: caja.id, estado: 'ABIERTA', deleted_at: null },
       });

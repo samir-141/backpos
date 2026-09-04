@@ -1,5 +1,5 @@
-import { IsIn, IsUUID } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsIn, IsOptional, IsUUID } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
  * Emisión de comprobante electrónico desde una venta registrada.
@@ -20,4 +20,11 @@ export class EmitirComprobanteDto {
   @ApiProperty({ description: 'ID de la serie (series_documentos) a usar' })
   @IsUUID('4')
   serieId: string;
+
+  @ApiPropertyOptional({
+    description: 'ID del perfil tributario / emisor a usar',
+  })
+  @IsOptional()
+  @IsUUID('4')
+  perfilTributarioId?: string;
 }

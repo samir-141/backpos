@@ -55,6 +55,10 @@ function configOk() {
     activo: true,
     regimen_tributario: 'GENERAL',
     certificado_fecha_vencimiento: new Date(Date.now() + 86400000),
+    sol_usuario_encriptado: 'crypted_user',
+    sol_clave_encriptada: 'crypted_pass',
+    certificado_path: 'certs/cert.p12',
+    certificado_clave_encriptada: 'crypted_key',
   };
 }
 

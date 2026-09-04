@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -27,9 +28,15 @@ export class SeriesDocumentosController {
 
   @Get()
   @RequirePermissions('series.ver')
-  @ApiOperation({})
-  async listar(@Request() req: any) {
-    const list = await this.seriesDocumentosService.listar(req.botica_id);
+  @ApiOperation({ summary: 'Listar series de documentos' })
+  async listar(
+    @Request() req: any,
+    @Query('perfil_tributario_id') perfilTributarioId?: string,
+  ) {
+    const list = await this.seriesDocumentosService.listar(
+      req.botica_id,
+      perfilTributarioId,
+    );
     return { data: list };
   }
 

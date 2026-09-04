@@ -47,6 +47,12 @@ describe('VentasService - Posventa', () => {
       },
       cajas: {
         findFirst: jest.fn(),
+        updateMany: jest.fn(),
+      },
+      movimientos_caja: {
+        findFirst: jest.fn(),
+        findMany: jest.fn(),
+        create: jest.fn(),
       },
       sucursales: {
         findUnique: jest.fn(),

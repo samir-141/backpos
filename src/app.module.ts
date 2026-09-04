@@ -29,6 +29,7 @@ import { ComprobantesImpresionModule } from './modules/comprobantes-impresion/co
 import { PrintingQzModule } from './modules/printing-qz/printing-qz.module';
 import { QzSecurityModule } from './modules/qz-security/qz-security.module';
 import { StorageModule } from './modules/storage/storage.module';
+import { PerfilesTributariosModule } from './modules/perfiles-tributarios/perfiles-tributarios.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { StorageModule } from './modules/storage/storage.module';
     PrintingQzModule,
     QzSecurityModule,
     StorageModule,
+    PerfilesTributariosModule,
   ],
   controllers: [AppController],
   providers: [

@@ -51,7 +51,7 @@ export class VentaToComprobanteMapper {
         departamento: configuracion.departamento ?? undefined,
         provincia: configuracion.provincia ?? undefined,
         distrito: configuracion.distrito ?? undefined,
-        codigoPais: configuracion.codigo_pais,
+        codigoPais: (configuracion as any).codigo_pais || 'PE',
       },
       cliente: cliente
         ? {

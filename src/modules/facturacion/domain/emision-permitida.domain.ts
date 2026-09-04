@@ -1,17 +1,18 @@
 import { TipoDocumentoSunat } from '../sunat/catalogos.enum';
-import { RegimenTributario } from './ambiente-sunat.enum';
+import { RegimenTributario, SistemaEmision } from './ambiente-sunat.enum';
 
 /**
  * Matriz de emisión por régimen tributario (qué comprobantes SUNAT puede
  * emitir la empresa según su régimen).
  *
- * - NUEVO_RUS: solo boletas de venta (03). No emite facturas.
- * - RER / MYPE / GENERAL: facturas, boletas y notas asociadas.
+ * - NUEVO_RUS / NRUS: solo boletas de venta (03), tickets y guías. No emite facturas.
+ * - RER / MYPE / RMT / GENERAL: facturas, boletas y notas asociadas.
  * - Sin configuración o régimen desconocido: ningún comprobante electrónico
  *   (el POS solo puede usar nota de venta interna, que no es documento SUNAT).
  */
 const PERMISOS_POR_REGIMEN: Record<string, readonly string[]> = {
   [RegimenTributario.NUEVO_RUS]: [TipoDocumentoSunat.BOLETA],
+  [RegimenTributario.NRUS]: [TipoDocumentoSunat.BOLETA],
   [RegimenTributario.RER]: [
     TipoDocumentoSunat.FACTURA,
     TipoDocumentoSunat.BOLETA,
@@ -19,6 +20,12 @@ const PERMISOS_POR_REGIMEN: Record<string, readonly string[]> = {
     TipoDocumentoSunat.NOTA_DEBITO,
   ],
   [RegimenTributario.MYPE]: [
+    TipoDocumentoSunat.FACTURA,
+    TipoDocumentoSunat.BOLETA,
+    TipoDocumentoSunat.NOTA_CREDITO,
+    TipoDocumentoSunat.NOTA_DEBITO,
+  ],
+  [RegimenTributario.RMT]: [
     TipoDocumentoSunat.FACTURA,
     TipoDocumentoSunat.BOLETA,
     TipoDocumentoSunat.NOTA_CREDITO,
@@ -41,10 +48,33 @@ const NOMBRES_TIPO: Record<string, string> = {
 
 const NOMBRES_REGIMEN: Record<string, string> = {
   [RegimenTributario.NUEVO_RUS]: 'Nuevo RUS',
+  [RegimenTributario.NRUS]: 'Nuevo RUS',
   [RegimenTributario.RER]: 'RER',
   [RegimenTributario.MYPE]: 'Régimen MYPE',
+  [RegimenTributario.RMT]: 'Régimen MYPE',
   [RegimenTributario.GENERAL]: 'Régimen General',
 };
+
+/** ¿El régimen requiere certificado digital .pfx / .p12 para emitir? */
+export function requiereCertificadoDigital(
+  regimen: string | null | undefined,
+  sistemaEmision?: string | null,
+): boolean {
+  if (
+    regimen === RegimenTributario.NUEVO_RUS ||
+    regimen === RegimenTributario.NRUS
+  ) {
+    return false;
+  }
+  if (
+    sistemaEmision === SistemaEmision.SEE_CF ||
+    sistemaEmision === SistemaEmision.SEE_SOL ||
+    sistemaEmision === SistemaEmision.MANUAL
+  ) {
+    return false;
+  }
+  return true;
+}
 
 /** Tipos de comprobante SUNAT (catálogo 01) permitidos para el régimen. */
 export function comprobantesPermitidos(
@@ -72,8 +102,10 @@ export function motivoBloqueoEmision(
 ): string | null {
   if (puedeEmitir(regimen, tipoComprobante)) return null;
   if (
-    regimen === (RegimenTributario.NUEVO_RUS as string) &&
-    tipoComprobante === (TipoDocumentoSunat.FACTURA as string)
+    (regimen === RegimenTributario.NUEVO_RUS ||
+      regimen === RegimenTributario.NRUS) &&
+    (tipoComprobante === TipoDocumentoSunat.FACTURA ||
+      tipoComprobante === 'FACTURA')
   ) {
     return 'Una empresa en Nuevo RUS no puede emitir facturas';
   }
@@ -106,7 +138,8 @@ export function errorCoherenciaRucRegimen(
     return 'El RUC debe tener 11 dígitos';
   }
   if (
-    regimen === (RegimenTributario.NUEVO_RUS as string) &&
+    (regimen === RegimenTributario.NUEVO_RUS ||
+      regimen === RegimenTributario.NRUS) &&
     !ruc.startsWith('10')
   ) {
     return 'El Nuevo RUS solo aplica a RUC de persona natural (inicia en 10)';

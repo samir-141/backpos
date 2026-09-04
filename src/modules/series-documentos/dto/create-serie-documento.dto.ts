@@ -49,6 +49,12 @@ export class CreateSerieDocumentoDto {
   @IsUUID()
   sucursal_id?: string;
 
+  @ApiProperty({ example: 'uuid-of-perfil-tributario', required: false })
+  @IsOptional()
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsUUID()
+  perfil_tributario_id?: string;
+
   @ApiProperty({ example: true, required: false })
   @IsOptional()
   @IsBoolean()

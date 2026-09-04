@@ -50,6 +50,11 @@ import { StorageModule } from '../storage/storage.module';
     PdfGeneratorService,
     EncryptionService,
   ],
-  exports: [FacturacionService],
+  exports: [
+    FacturacionService,
+    ComprobanteStorageService,
+    FirmaService,
+    EncryptionService,
+  ],
 })
 export class FacturacionModule {}

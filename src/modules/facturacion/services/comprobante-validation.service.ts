@@ -36,10 +36,35 @@ export type VentaEmision = ventas & {
   >;
 };
 
+export interface EmisorConfigData {
+  id?: string;
+  perfil_tributario_id?: string;
+  ruc: string;
+  razon_social: string;
+  nombre_comercial?: string | null;
+  codigo_pais?: string;
+  direccion_fiscal: string;
+  ubigeo?: string | null;
+  departamento?: string | null;
+  provincia?: string | null;
+  distrito?: string | null;
+  regimen_tributario: string;
+  sistema_emision?: string;
+  proveedor_tipo?: string;
+  ambiente: string;
+  sol_usuario_encriptado?: string | null;
+  sol_clave_encriptada?: string | null;
+  certificado_nombre?: string | null;
+  certificado_path?: string | null;
+  certificado_clave_encriptada?: string | null;
+  certificado_fecha_vencimiento?: Date | null;
+  activo?: boolean;
+}
+
 export interface ContextoEmision {
   venta: VentaEmision;
   serie: series_documentos;
-  configuracion: configuraciones_tributarias;
+  configuracion: EmisorConfigData;
 }
 
 /** Mapeo del tipo de documento del cliente (texto libre POS) al catálogo 06. */
@@ -139,11 +164,136 @@ export class ComprobanteValidationService {
       );
     }
 
-    // 9-11: configuración tributaria completa
-    const configuracion =
-      await this.prisma.configuraciones_tributarias.findFirst({
-        where: { botica_id: boticaId, deleted_at: null },
+    // 9-11: resolución y validación del emisor / perfil tributario
+    const perfilTargetId =
+      dto.perfilTributarioId ||
+      serie.perfil_tributario_id ||
+      venta.perfil_tributario_id;
+
+    let configuracion: EmisorConfigData | null = null;
+
+    if (perfilTargetId && this.prisma.perfiles_tributarios?.findFirst) {
+      const perfil = await this.prisma.perfiles_tributarios.findFirst({
+        where: { id: perfilTargetId, botica_id: boticaId, deleted_at: null },
+        include: { configuracion_emision: true },
       });
+      if (perfil) {
+        configuracion = {
+          id: perfil.id,
+          perfil_tributario_id: perfil.id,
+          ruc: perfil.ruc,
+          razon_social: perfil.razon_social,
+          nombre_comercial: perfil.nombre_comercial,
+          codigo_pais: 'PE',
+          direccion_fiscal: perfil.direccion_fiscal,
+          ubigeo: perfil.ubigeo,
+          departamento: perfil.departamento,
+          provincia: perfil.provincia,
+          distrito: perfil.distrito,
+          regimen_tributario: perfil.regimen_tributario,
+          sistema_emision: perfil.configuracion_emision?.sistema_emision,
+          proveedor_tipo: perfil.configuracion_emision?.proveedor_tipo,
+          ambiente: perfil.configuracion_emision?.ambiente ?? 'BETA',
+          sol_usuario_encriptado:
+            perfil.configuracion_emision?.sol_usuario_encriptado,
+          sol_clave_encriptada:
+            perfil.configuracion_emision?.sol_clave_encriptada,
+          certificado_nombre: perfil.configuracion_emision?.certificado_nombre,
+          certificado_path: perfil.configuracion_emision?.certificado_path,
+          certificado_clave_encriptada:
+            perfil.configuracion_emision?.certificado_clave_encriptada,
+          certificado_fecha_vencimiento:
+            perfil.configuracion_emision?.certificado_fecha_vencimiento,
+          activo:
+            perfil.activo && (perfil.configuracion_emision?.activo ?? true),
+        };
+      }
+    }
+
+    // Fallback: perfil principal o legacy configuraciones_tributarias
+    if (!configuracion && this.prisma.perfiles_tributarios?.findFirst) {
+      const perfilPrincipal =
+        (await this.prisma.perfiles_tributarios.findFirst({
+          where: { botica_id: boticaId, es_principal: true, deleted_at: null },
+          include: { configuracion_emision: true },
+        })) ||
+        (await this.prisma.perfiles_tributarios.findFirst({
+          where: { botica_id: boticaId, deleted_at: null },
+          include: { configuracion_emision: true },
+        }));
+
+      if (perfilPrincipal) {
+        configuracion = {
+          id: perfilPrincipal.id,
+          perfil_tributario_id: perfilPrincipal.id,
+          ruc: perfilPrincipal.ruc,
+          razon_social: perfilPrincipal.razon_social,
+          nombre_comercial: perfilPrincipal.nombre_comercial,
+          codigo_pais: 'PE',
+          direccion_fiscal: perfilPrincipal.direccion_fiscal,
+          ubigeo: perfilPrincipal.ubigeo,
+          departamento: perfilPrincipal.departamento,
+          provincia: perfilPrincipal.provincia,
+          distrito: perfilPrincipal.distrito,
+          regimen_tributario: perfilPrincipal.regimen_tributario,
+          sistema_emision:
+            perfilPrincipal.configuracion_emision?.sistema_emision,
+          proveedor_tipo: perfilPrincipal.configuracion_emision?.proveedor_tipo,
+          ambiente: perfilPrincipal.configuracion_emision?.ambiente ?? 'BETA',
+          sol_usuario_encriptado:
+            perfilPrincipal.configuracion_emision?.sol_usuario_encriptado,
+          sol_clave_encriptada:
+            perfilPrincipal.configuracion_emision?.sol_clave_encriptada,
+          certificado_nombre:
+            perfilPrincipal.configuracion_emision?.certificado_nombre,
+          certificado_path:
+            perfilPrincipal.configuracion_emision?.certificado_path,
+          certificado_clave_encriptada:
+            perfilPrincipal.configuracion_emision?.certificado_clave_encriptada,
+          certificado_fecha_vencimiento:
+            perfilPrincipal.configuracion_emision
+              ?.certificado_fecha_vencimiento,
+          activo:
+            perfilPrincipal.activo &&
+            (perfilPrincipal.configuracion_emision?.activo ?? true),
+        };
+      }
+    }
+
+    if (!configuracion && this.prisma.configuraciones_tributarias?.findFirst) {
+      const legacyCfg = await this.prisma.configuraciones_tributarias.findFirst(
+        {
+          where: { botica_id: boticaId, deleted_at: null },
+        },
+      );
+      if (legacyCfg) {
+        configuracion = {
+          id: legacyCfg.id,
+          ruc: legacyCfg.ruc,
+          razon_social: legacyCfg.razon_social,
+          nombre_comercial: legacyCfg.nombre_comercial,
+          codigo_pais: legacyCfg.codigo_pais || 'PE',
+          direccion_fiscal: legacyCfg.direccion_fiscal,
+          ubigeo: legacyCfg.ubigeo,
+          departamento: legacyCfg.departamento,
+          provincia: legacyCfg.provincia,
+          distrito: legacyCfg.distrito,
+          regimen_tributario: legacyCfg.regimen_tributario,
+          sistema_emision: 'SEE_CONTRIBUYENTE',
+          proveedor_tipo: legacyCfg.proveedor_facturacion,
+          ambiente: legacyCfg.ambiente,
+          sol_usuario_encriptado: legacyCfg.sol_usuario_encriptado,
+          sol_clave_encriptada: legacyCfg.sol_clave_encriptada,
+          certificado_nombre: legacyCfg.certificado_nombre,
+          certificado_path: legacyCfg.certificado_path,
+          certificado_clave_encriptada: legacyCfg.certificado_clave_encriptada,
+          certificado_fecha_vencimiento:
+            legacyCfg.certificado_fecha_vencimiento,
+          activo: legacyCfg.activo ?? true,
+        };
+      }
+    }
+
     if (!configuracion || !configuracion.activo) {
       this.logger.warn(
         `Emisión bloqueada: sin configuración tributaria activa para botica ${boticaId}`,
@@ -152,6 +302,7 @@ export class ComprobanteValidationService {
         'La empresa no tiene configuración tributaria activa',
       );
     }
+
     if (
       configuracion.certificado_fecha_vencimiento &&
       configuracion.certificado_fecha_vencimiento < new Date()
@@ -219,18 +370,28 @@ export class ComprobanteValidationService {
   }
 
   /** Credenciales y certificado son obligatorios recién al ENVIAR a SUNAT. */
-  validarParaEnvio(configuracion: configuraciones_tributarias): void {
+  validarParaEnvio(configuracion: EmisorConfigData): void {
+    const reqCert =
+      configuracion.regimen_tributario !== 'NRUS' &&
+      configuracion.regimen_tributario !== 'NUEVO_RUS' &&
+      configuracion.sistema_emision !== 'SEE_CF' &&
+      configuracion.sistema_emision !== 'MANUAL';
+
     if (
-      !configuracion.sol_usuario_encriptado ||
-      !configuracion.sol_clave_encriptada
+      (!configuracion.sol_usuario_encriptado ||
+        !configuracion.sol_clave_encriptada) &&
+      configuracion.sistema_emision !== 'MANUAL' &&
+      configuracion.sistema_emision !== 'SEE_CF'
     ) {
       throw new BadRequestException(
         'Faltan credenciales SOL en la configuración tributaria',
       );
     }
+
     if (
-      !configuracion.certificado_path ||
-      !configuracion.certificado_clave_encriptada
+      reqCert &&
+      (!configuracion.certificado_path ||
+        !configuracion.certificado_clave_encriptada)
     ) {
       throw new BadRequestException(
         'Falta el certificado digital en la configuración tributaria',

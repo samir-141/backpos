@@ -15,7 +15,10 @@ import { ZipService } from '../zip/zip.service';
 import { ComprobanteStorageService } from '../storage/comprobante-storage.service';
 import { PdfGeneratorService } from '../pdf/pdf-generator.service';
 import { CorrelativosService } from './correlativos.service';
-import { ComprobanteValidationService } from './comprobante-validation.service';
+import {
+  ComprobanteValidationService,
+  EmisorConfigData,
+} from './comprobante-validation.service';
 import { VentaToComprobanteMapper } from '../mappers/venta-to-comprobante.mapper';
 import { EmitirComprobanteDto } from '../dtos/emitir-comprobante.dto';
 import {
@@ -105,6 +108,7 @@ export class FacturacionService {
       const creado = await tx.comprobantes_electronicos.create({
         data: {
           botica_id: boticaId,
+          perfil_tributario_id: ctx.configuracion.perfil_tributario_id,
           sucursal_id: ctx.venta.cajas.sucursal_id,
           venta_id: ctx.venta.id,
           cliente_id: ctx.venta.cliente_id,
@@ -196,7 +200,10 @@ export class FacturacionService {
     }
 
     const comp = await this.obtener(comprobanteId, boticaId);
-    const config = await this.obtenerConfiguracion(boticaId);
+    const config = await this.obtenerConfiguracion(
+      boticaId,
+      comp.perfil_tributario_id,
+    );
 
     try {
       this.validation.validarParaEnvio(config);
@@ -206,6 +213,52 @@ export class FacturacionService {
         comp.fecha_emision,
         comp.nombre_archivo,
       );
+
+      // Modalidad Nuevo RUS / SEE-CF / MANUAL: emisión directa sin SOAP directo
+      if (
+        config.sistema_emision === 'SEE_CF' ||
+        config.sistema_emision === 'MANUAL' ||
+        config.regimen_tributario === 'NRUS' ||
+        config.regimen_tributario === 'NUEVO_RUS'
+      ) {
+        const actualizado = await this.actualizarEstado(comp.id, {
+          estado: EstadoComprobante.ACEPTADO,
+          codigo_respuesta: '0',
+          mensaje_respuesta:
+            'Comprobante emitido bajo modalidad Nuevo RUS / SEE-CF (Ticket POS)',
+          enviado_at: new Date(),
+          aceptado_at: new Date(),
+        });
+
+        try {
+          const pdfBuffer = await this.pdf.generarPdf(
+            data,
+            { hash: '', estado: EstadoComprobante.ACEPTADO },
+            'A4',
+          );
+          const pdfPath = await this.storage.guardarPdf(dir, pdfBuffer);
+          await this.prisma.comprobantes_electronicos.update({
+            where: { id: comp.id },
+            data: { pdf_path: pdfPath },
+          });
+          actualizado.pdf_path = pdfPath;
+        } catch (error) {
+          this.logger.warn(
+            `No se pudo generar el PDF de ${comp.nombre_archivo}: ${(error as Error).message}`,
+          );
+        }
+
+        await this.audit.registrar({
+          usuario_id: comp.created_by ?? undefined,
+          accion: 'COMPROBANTE_ACEPTADO',
+          tabla: 'comprobantes_electronicos',
+          registros_afectados: 1,
+          botica_id: boticaId,
+          observacion: `${comp.serie}-${comp.correlativo} emitido modalidad ${config.sistema_emision}`,
+        });
+
+        return actualizado;
+      }
 
       // 1. XML (solo si no existe)
       let xmlFirmadoPath = comp.xml_firmado_path;
@@ -473,19 +526,97 @@ export class FacturacionService {
 
   private async obtenerConfiguracion(
     boticaId: string,
-  ): Promise<configuraciones_tributarias> {
-    const config = await this.prisma.configuraciones_tributarias.findFirst({
+    perfilTributarioId?: string | null,
+  ): Promise<EmisorConfigData> {
+    if (perfilTributarioId && this.prisma.perfiles_tributarios?.findFirst) {
+      const perfil = await this.prisma.perfiles_tributarios.findFirst({
+        where: { id: perfilTributarioId, botica_id: boticaId, deleted_at: null },
+        include: { configuracion_emision: true },
+      });
+      if (perfil) {
+        return this.mapPerfilToConfigData(perfil);
+      }
+    }
+
+    if (this.prisma.perfiles_tributarios?.findFirst) {
+      const perfilPrincipal =
+        (await this.prisma.perfiles_tributarios.findFirst({
+          where: { botica_id: boticaId, es_principal: true, deleted_at: null },
+          include: { configuracion_emision: true },
+        })) ||
+        (await this.prisma.perfiles_tributarios.findFirst({
+          where: { botica_id: boticaId, deleted_at: null },
+          include: { configuracion_emision: true },
+        }));
+
+      if (perfilPrincipal) {
+        return this.mapPerfilToConfigData(perfilPrincipal);
+      }
+    }
+
+    const legacy = await this.prisma.configuraciones_tributarias.findFirst({
       where: { botica_id: boticaId, activo: true, deleted_at: null },
     });
-    if (!config) {
-      this.logger.warn(
-        `Intento de emisión sin configuración tributaria activa para botica ${boticaId}`,
-      );
-      throw new NotFoundException(
-        'La empresa no tiene configuración tributaria activa',
-      );
+    if (legacy) {
+      return {
+        id: legacy.id,
+        ruc: legacy.ruc,
+        razon_social: legacy.razon_social,
+        nombre_comercial: legacy.nombre_comercial,
+        codigo_pais: legacy.codigo_pais || 'PE',
+        direccion_fiscal: legacy.direccion_fiscal,
+        ubigeo: legacy.ubigeo,
+        departamento: legacy.departamento,
+        provincia: legacy.provincia,
+        distrito: legacy.distrito,
+        regimen_tributario: legacy.regimen_tributario,
+        sistema_emision: 'SEE_CONTRIBUYENTE',
+        proveedor_tipo: legacy.proveedor_facturacion,
+        ambiente: legacy.ambiente,
+        sol_usuario_encriptado: legacy.sol_usuario_encriptado,
+        sol_clave_encriptada: legacy.sol_clave_encriptada,
+        certificado_nombre: legacy.certificado_nombre,
+        certificado_path: legacy.certificado_path,
+        certificado_clave_encriptada: legacy.certificado_clave_encriptada,
+        certificado_fecha_vencimiento: legacy.certificado_fecha_vencimiento,
+        activo: legacy.activo,
+      };
     }
-    return config;
+
+    this.logger.warn(
+      `Intento de emisión sin configuración tributaria activa para botica ${boticaId}`,
+    );
+    throw new NotFoundException(
+      'La empresa no tiene perfil tributario o configuración activa',
+    );
+  }
+
+  private mapPerfilToConfigData(perfil: any): EmisorConfigData {
+    const cfg = perfil.configuracion_emision;
+    return {
+      id: perfil.id,
+      perfil_tributario_id: perfil.id,
+      ruc: perfil.ruc,
+      razon_social: perfil.razon_social,
+      nombre_comercial: perfil.nombre_comercial,
+      codigo_pais: 'PE',
+      direccion_fiscal: perfil.direccion_fiscal,
+      ubigeo: perfil.ubigeo,
+      departamento: perfil.departamento,
+      provincia: perfil.provincia,
+      distrito: perfil.distrito,
+      regimen_tributario: perfil.regimen_tributario,
+      sistema_emision: cfg?.sistema_emision || 'SEE_CONTRIBUYENTE',
+      proveedor_tipo: cfg?.proveedor_tipo || 'SUNAT_DIRECTO',
+      ambiente: cfg?.ambiente || 'BETA',
+      sol_usuario_encriptado: cfg?.sol_usuario_encriptado,
+      sol_clave_encriptada: cfg?.sol_clave_encriptada,
+      certificado_nombre: cfg?.certificado_nombre,
+      certificado_path: cfg?.certificado_path,
+      certificado_clave_encriptada: cfg?.certificado_clave_encriptada,
+      certificado_fecha_vencimiento: cfg?.certificado_fecha_vencimiento,
+      activo: perfil.activo && (cfg?.activo ?? true),
+    };
   }
 
   private async actualizarEstado(
@@ -517,7 +648,7 @@ export class FacturacionService {
   /** Reconstruye la estructura de dominio desde la fotografía en BD. */
   private mapDesdeRegistro(
     comp: ComprobanteConDetalles,
-    config: configuraciones_tributarias,
+    config: EmisorConfigData,
   ): ComprobanteSunatData {
     return {
       emisor: {
@@ -529,7 +660,7 @@ export class FacturacionService {
         departamento: config.departamento ?? undefined,
         provincia: config.provincia ?? undefined,
         distrito: config.distrito ?? undefined,
-        codigoPais: config.codigo_pais,
+        codigoPais: config.codigo_pais || 'PE',
       },
       cliente: {
         tipoDocumento: comp.cliente_tipo_documento ?? '0',

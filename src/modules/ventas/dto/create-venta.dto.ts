@@ -71,6 +71,13 @@ export class CreateVentaDto {
   @IsUUID()
   idempotency_key?: string;
 
+  @ApiPropertyOptional({
+    description: 'ID del perfil tributario emisor para multi-RUC',
+  })
+  @IsOptional()
+  @IsUUID()
+  perfil_tributario_id?: string;
+
   @ApiProperty()
   @IsNotEmpty()
   @IsString()
