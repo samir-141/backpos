@@ -30,6 +30,8 @@ import { PrintingQzModule } from './modules/printing-qz/printing-qz.module';
 import { QzSecurityModule } from './modules/qz-security/qz-security.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { PerfilesTributariosModule } from './modules/perfiles-tributarios/perfiles-tributarios.module';
+import { TaxEngineModule } from './modules/tax-engine/tax-engine.module';
+import { BibliotecaProductosModule } from './modules/biblioteca-productos/biblioteca-productos.module';
 
 @Module({
   imports: [
@@ -60,6 +62,8 @@ import { PerfilesTributariosModule } from './modules/perfiles-tributarios/perfil
     QzSecurityModule,
     StorageModule,
     PerfilesTributariosModule,
+    TaxEngineModule,
+    BibliotecaProductosModule,
   ],
   controllers: [AppController],
   providers: [

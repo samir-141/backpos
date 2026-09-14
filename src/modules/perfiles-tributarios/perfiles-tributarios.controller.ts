@@ -137,7 +137,8 @@ export class PerfilesTributariosController {
   @RequirePermissions('facturacion.config')
   @Roles('ADMINISTRADOR')
   @ApiOperation({
-    summary: 'Actualizar configuración de emisión y credenciales SOL (alias POST)',
+    summary:
+      'Actualizar configuración de emisión y credenciales SOL (alias POST)',
   })
   guardarConfigEmisionPost(
     @Param('id') id: string,

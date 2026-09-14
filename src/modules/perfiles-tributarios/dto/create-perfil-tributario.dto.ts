@@ -33,7 +33,9 @@ export class CreatePerfilTributarioDto {
 
   @ApiPropertyOptional({ description: 'Nombre Comercial' })
   @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.trim() === '' ? undefined : value,
+  )
   @IsString()
   @MaxLength(200)
   nombre_comercial?: string;
@@ -53,42 +55,54 @@ export class CreatePerfilTributarioDto {
 
   @ApiPropertyOptional({ description: 'Ubigeo de 6 dígitos' })
   @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.trim() === '' ? undefined : value,
+  )
   @ValidateIf((o) => typeof o.ubigeo === 'string' && o.ubigeo.trim().length > 0)
   @Matches(/^\d{6}$/, { message: 'El ubigeo debe tener 6 dígitos' })
   ubigeo?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.trim() === '' ? undefined : value,
+  )
   @IsString()
   @MaxLength(100)
   departamento?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.trim() === '' ? undefined : value,
+  )
   @IsString()
   @MaxLength(100)
   provincia?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.trim() === '' ? undefined : value,
+  )
   @IsString()
   @MaxLength(100)
   distrito?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.trim() === '' ? undefined : value,
+  )
   @IsString()
   @MaxLength(20)
   telefono?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @Transform(({ value }) => (typeof value === 'string' && value.trim() === '' ? undefined : value))
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.trim() === '' ? undefined : value,
+  )
   @IsString()
   @MaxLength(100)
   email?: string;

@@ -530,7 +530,11 @@ export class FacturacionService {
   ): Promise<EmisorConfigData> {
     if (perfilTributarioId && this.prisma.perfiles_tributarios?.findFirst) {
       const perfil = await this.prisma.perfiles_tributarios.findFirst({
-        where: { id: perfilTributarioId, botica_id: boticaId, deleted_at: null },
+        where: {
+          id: perfilTributarioId,
+          botica_id: boticaId,
+          deleted_at: null,
+        },
         include: { configuracion_emision: true },
       });
       if (perfil) {

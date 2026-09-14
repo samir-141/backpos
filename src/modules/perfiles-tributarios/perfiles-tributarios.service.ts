@@ -465,15 +465,11 @@ export class PerfilesTributariosService {
     const data = res.data as Record<string, any>;
     return {
       ruc: rucLimpio,
-      razonSocial:
-        data.nombre || data.razonSocial || data.razon_social || '',
-      nombreComercial:
-        data.nombreComercial || data.nombre_comercial || '',
+      razonSocial: data.nombre || data.razonSocial || data.razon_social || '',
+      nombreComercial: data.nombreComercial || data.nombre_comercial || '',
       tipoContribuyente:
         data.tipo ||
-        (rucLimpio.startsWith('20')
-          ? 'PERSONA_JURIDICA'
-          : 'PERSONA_NATURAL'),
+        (rucLimpio.startsWith('20') ? 'PERSONA_JURIDICA' : 'PERSONA_NATURAL'),
       estado: data.estado || 'ACTIVO',
       condicion: data.condicion || 'HABIDO',
       direccion: data.direccion || data.direccionCompleta || '',

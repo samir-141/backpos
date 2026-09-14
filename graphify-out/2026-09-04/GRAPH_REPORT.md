@@ -1,16 +1,16 @@
-# Graph Report - pos-backend  (2026-09-04)
+# Graph Report - pos-backend  (2026-09-03)
 
 ## Corpus Check
-- 254 files · ~91,051 words
+- 242 files · ~85,301 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2140 nodes · 4233 edges · 215 communities (105 shown, 110 thin omitted)
+- 2032 nodes · 3955 edges · 209 communities (104 shown, 105 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 1 edges (avg confidence: 0.5)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1f1c2525`
+- Built from commit: `68920609`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -22,31 +22,31 @@
 - clientes.controller.ts
 - PdfGeneratorService
 - ProveedoresService
-- StorageService
+- ConfiguracionTributariaController
 - VentasService
 - 20260729020102_init/migration.sql
-- comprobantes-impresion.service.ts
+- ComprobantePrintData
 - CreateSerieDocumentoDto
-- UsuariosController
+- RequirePermissions
 - app.module.ts
-- src/prisma/prisma.service.ts
-- ResumenDiarioController
+- PrismaService
+- StorageService
 - products.controller.ts
-- facturacion.service.ts
-- reportes.controller.ts
+- tributos-calculator.service.ts
+- ReportesService
 - ProductosService
+- facturacion.service.ts
 - facturacion.module.ts
-- FirmaService
-- perfiles-tributarios.controller.ts
+- productos.controller.ts
 - producto.mapper.ts
-- comprobante-validation.service.ts
+- comprobante-validation.spec.ts
 - CatalogosController
 - compilerOptions
-- auth.module.ts
-- gastos.controller.ts
+- AuthService
+- QueryProveedoresDto
 - DashboardController
 - FacturacionService
-- CajasService
+- RealtimeService
 - EscannerGateway
 - EventsGateway
 - users.module.ts
@@ -56,13 +56,13 @@
 - productos.service.ts
 - scripts
 - ComprobantesImpresionService
-- perfiles-tributarios.service.ts
+- comprobante-validation.service.ts
 - ComprobanteStorageService
-- PosventaController
+- TenantGuard
 - resumen-diario-xml.builder.ts
 - PrismaService
-- PlatformAdminGuard
-- public.decorator.ts
+- auth.module.ts
+- AppController
 - sunat-soap.client.ts
 - usuarios.controller.ts
 - public.vw_productos_pos
@@ -111,7 +111,7 @@
 - rxjs
 - socket.io
 - swagger-ui-express
-- RealtimeService
+- storage.service.ts
 - seed-tienda-prueba.js
 - @types/xmldom
 - generate-qz-dev-cert.ts
@@ -121,18 +121,18 @@
 - supertest
 - @swc/core
 - ts-loader
-- PrismaService
+- proveedores.service.ts
 - tsconfig-paths
 - ComprobantesPublicosController
 - @types/jest
 - @types/passport-jwt
 - @types/pg
-- administracion-general.module.ts
+- UsersController
 - typescript-eslint
 - test-supabase-storage.js
 - @nestjs/passport
 - fast-xml-parser
-- productos.controller.ts
+- SeriesDocumentosController
 - node-forge
 - product.entity.ts
 - xml-crypto
@@ -163,25 +163,22 @@
 - DiagnosticosController
 - @types/supertest
 - CreateVentaDto
-- CreateGastoDto
+- gastos.controller.ts
 - dashboard.service.ts
-- ImprimirComprobanteDto
-- RequirePermissions
+- tenant.guard.ts
+- permissions.guard.ts
 - ReportesController
 - events.gateway.ts
 - GuardarConfiguracionTributariaDto
-- posventa.service.ts
-- cajas.module.ts
+- posventa.controller.ts
+- FileStorageProvider
 - axios
 - class-validator
 - @nestjs/platform-express
 - @supabase/supabase-js
-- dashboard.module.ts
+- gastos.module.ts
 - HttpCode
 - Query
-- perfiles-tributarios.module.ts
-- emission-provider.interface.ts
-- ArrayMinSize
 - ApiBearerAuth
 - ApiOperation
 - ApiResponse
@@ -190,13 +187,13 @@
 - Controller
 - Delete
 - Get
-- IsArray
+- ClientesController
 - Injectable
 - Param
 - Patch
 - Post
 - Request
-- PerfilesTributariosController
+- StorageController
 - IsEmail
 - IsIn
 - IsNotEmpty
@@ -215,38 +212,35 @@
 - Get
 - UseGuards
 - UseGuards
-- IsInt
-- IsNotEmpty
-- ValidateNested
 
 ## God Nodes (most connected - your core abstractions)
-1. `RequirePermissions()` - 97 edges
-2. `PrismaService` - 56 edges
+1. `RequirePermissions()` - 96 edges
+2. `PrismaService` - 57 edges
 3. `"empresas"` - 31 edges
 4. `"usuarios"` - 30 edges
 5. `EventsGateway` - 29 edges
 6. `AdministracionGeneralService` - 25 edges
-7. `TenantGuard` - 25 edges
-8. `PrismaModule` - 25 edges
-9. `StorageService` - 24 edges
-10. `PermissionsGuard` - 24 edges
+7. `StorageService` - 24 edges
+8. `TenantGuard` - 24 edges
+9. `PrismaModule` - 24 edges
+10. `PermissionsGuard` - 23 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `DetallePreparado` --references--> `CreateCompraDetalleDto`  [EXTRACTED]
   src/modules/compras/compras.service.ts → src/modules/compras/dto/compras.dto.ts
 - `bootstrap()` --calls--> `createCorsOptions()`  [EXTRACTED]
   src/main.ts → src/common/config/cors.config.ts
+- `ComprobantePrintData` --inherits--> `ComprobanteSunatData`  [EXTRACTED]
+  src/modules/comprobantes-impresion/interfaces/comprobante-print-data.interface.ts → src/modules/facturacion/domain/comprobante-data.interface.ts
 - `setup()` --calls--> `hashSnapshot()`  [EXTRACTED]
   src/modules/comprobantes-publicos/comprobantes-publicos.service.spec.ts → src/modules/comprobantes-publicos/comprobantes-publicos.service.ts
 - `ResultadoCdr` --references--> `EstadoComprobante`  [EXTRACTED]
   src/modules/facturacion/cdr/cdr-parser.service.ts → src/modules/facturacion/domain/estado-comprobante.enum.ts
-- `ComprobantePrintData` --inherits--> `ComprobanteSunatData`  [EXTRACTED]
-  src/modules/comprobantes-impresion/interfaces/comprobante-print-data.interface.ts → src/modules/facturacion/domain/comprobante-data.interface.ts
 
 ## Import Cycles
 - None detected.
 
-## Communities (215 total, 110 thin omitted)
+## Communities (209 total, 105 thin omitted)
 
 ### Community 0 - "PrintingQzService"
 Cohesion: 0.10
@@ -258,27 +252,27 @@ Nodes (39): ArrayUnique, IsEmail, IsIn, IsNotEmpty, MinLength, AdministracionGen
 
 ### Community 2 - "ComprasService"
 Cohesion: 0.05
-Nodes (43): ArrayMaxSize, IsNumber, ComprasController, ApiTags, Body, Controller, Get, Headers (+35 more)
+Nodes (44): ArrayMaxSize, IsNumber, ComprasController, ApiTags, Body, Controller, Get, Headers (+36 more)
 
 ### Community 3 - "catalogos.controller.ts"
 Cohesion: 0.09
 Nodes (26): CatalogosService, Injectable, CampoEspecial, CatalogoConfig, CATALOGOS_CONFIG, TipoCatalogo, TIPOS_CATALOGO, CreateCatalogoDto (+18 more)
 
 ### Community 4 - "clientes.controller.ts"
-Cohesion: 0.05
-Nodes (39): HttpCode, Query, consultarPadron(), PadronResponse, ClientesController, ApiOperation, ApiTags, Body (+31 more)
+Cohesion: 0.07
+Nodes (24): consultarPadron(), PadronResponse, ClientesService, Injectable, CreateClienteDto, ApiProperty, ApiPropertyOptional, IsEmail (+16 more)
 
 ### Community 5 - "PdfGeneratorService"
 Cohesion: 0.15
 Nodes (12): qrcode, qrcode, ExtrasPdf, fmt(), fontsPdfmake(), FormatoPdf, PdfGeneratorService, PdfKitStream (+4 more)
 
 ### Community 6 - "ProveedoresService"
-Cohesion: 0.07
-Nodes (30): isValidPeruvianRuc(), CreateProveedorDto, QueryProveedoresDto, IsEmail, IsInt, IsOptional, IsString, Length (+22 more)
+Cohesion: 0.11
+Nodes (15): ProveedoresController, ApiTags, Body, Controller, Delete, Get, Param, Patch (+7 more)
 
-### Community 7 - "StorageService"
-Cohesion: 0.05
-Nodes (36): ApiConsumes, ConfiguracionTributariaController, ApiOperation, ApiTags, Body, Controller, Get, Patch (+28 more)
+### Community 7 - "ConfiguracionTributariaController"
+Cohesion: 0.13
+Nodes (14): ConfiguracionTributariaController, ApiOperation, ApiTags, Body, Controller, Get, Patch, Post (+6 more)
 
 ### Community 8 - "VentasService"
 Cohesion: 0.10
@@ -288,65 +282,65 @@ Nodes (16): ApiOperation, ApiTags, Body, Controller, Get, Headers, HttpCode, Par
 Cohesion: 0.24
 Nodes (31): "cajas", "categorias", "clientes", "compras", "detalles_compras", "detalles_ventas", "empresas", "formas_farmaceuticas" (+23 more)
 
-### Community 10 - "comprobantes-impresion.service.ts"
+### Community 10 - "ComprobantePrintData"
 Cohesion: 0.11
-Nodes (13): ComprobantePagoData, ComprobantePrintData, A4Template, fmt(), TIPOS_COMPROBANTE, ComprobanteTemplate, fmt(), Ticket58Template (+5 more)
+Nodes (12): ComprobantePagoData, ComprobantePrintData, A4Template, fmt(), TIPOS_COMPROBANTE, ComprobanteTemplate, fmt(), Ticket58Template (+4 more)
 
 ### Community 11 - "CreateSerieDocumentoDto"
-Cohesion: 0.08
-Nodes (27): CreateSerieDocumentoDto, ApiProperty, IsBoolean, IsIn, IsNumber, IsOptional, IsString, IsUUID (+19 more)
-
-### Community 12 - "UsuariosController"
 Cohesion: 0.13
-Nodes (16): ApiOperation, ApiTags, Body, Controller, Delete, Get, HttpCode, Param (+8 more)
+Nodes (14): CreateSerieDocumentoDto, ApiProperty, IsBoolean, IsIn, IsNumber, IsOptional, IsString, IsUUID (+6 more)
+
+### Community 12 - "RequirePermissions"
+Cohesion: 0.05
+Nodes (51): Put, RequirePermissions(), ResumenDiarioController, ApiOperation, ApiTags, Body, Controller, Get (+43 more)
 
 ### Community 13 - "app.module.ts"
-Cohesion: 0.08
-Nodes (34): AuditModule, Global, Module, CatalogosModule, Module, ClientesModule, Module, ComprasModule (+26 more)
+Cohesion: 0.07
+Nodes (37): AdministracionGeneralModule, Module, AuditModule, Global, Module, CajasModule, Module, CatalogosModule (+29 more)
 
-### Community 14 - "src/prisma/prisma.service.ts"
-Cohesion: 0.14
-Nodes (11): AuditService, LogAuditParams, Injectable, ComprobantesPublicosService, hashesCoinciden(), hashSnapshot(), serializarSnapshot(), setup() (+3 more)
+### Community 14 - "PrismaService"
+Cohesion: 0.11
+Nodes (14): FindManyArgs, AuditService, LogAuditParams, Injectable, ComprobantesPublicosService, hashesCoinciden(), hashSnapshot(), serializarSnapshot() (+6 more)
 
-### Community 15 - "ResumenDiarioController"
-Cohesion: 0.22
-Nodes (12): ResumenDiarioController, ApiOperation, ApiTags, Body, Controller, Get, HttpCode, Param (+4 more)
+### Community 15 - "StorageService"
+Cohesion: 0.20
+Nodes (4): Optional, StorageService, Injectable, Optional
 
 ### Community 16 - "products.controller.ts"
+Cohesion: 0.10
+Nodes (15): CreateProductDto, UpdateProductDto, ProductsController, Body, Controller, Delete, Get, Param (+7 more)
+
+### Community 17 - "tributos-calculator.service.ts"
 Cohesion: 0.11
-Nodes (13): CreateProductDto, UpdateProductDto, ProductsController, Body, Controller, Delete, Get, Param (+5 more)
+Nodes (21): ClienteComprobanteData, ComprobanteItemData, ComprobanteSunatData, DocumentoComprobanteData, nombreArchivoComprobante(), TotalesComprobanteData, Injectable, VentaToComprobanteMapper (+13 more)
 
-### Community 17 - "facturacion.service.ts"
-Cohesion: 0.12
-Nodes (20): UnidadMedidaSunat, ClienteComprobanteData, ComprobanteItemData, DocumentoComprobanteData, nombreArchivoComprobante(), TotalesComprobanteData, ESTADOS_REINTENTABLES, ComprobanteConDetalles (+12 more)
-
-### Community 18 - "reportes.controller.ts"
-Cohesion: 0.17
-Nodes (7): QueryReportesDto, ApiPropertyOptional, IsOptional, IsString, IsUUID, ReportesService, Injectable
+### Community 18 - "ReportesService"
+Cohesion: 0.20
+Nodes (4): ReportesModule, Module, ReportesService, Injectable
 
 ### Community 19 - "ProductosService"
 Cohesion: 0.12
 Nodes (18): ProductosController, ApiOperation, ApiTags, Body, Controller, Delete, Get, Headers (+10 more)
 
-### Community 20 - "facturacion.module.ts"
-Cohesion: 0.23
-Nodes (6): CdrParserService, ResultadoCdr, Injectable, EstadoComprobante, Injectable, ZipService
+### Community 20 - "facturacion.service.ts"
+Cohesion: 0.19
+Nodes (8): CdrParserService, ResultadoCdr, Injectable, EstadoComprobante, ESTADOS_REINTENTABLES, ComprobanteConDetalles, Injectable, ZipService
 
-### Community 21 - "FirmaService"
-Cohesion: 0.14
-Nodes (8): CertificadoExtraido, FirmaService, ResultadoFirma, Injectable, fmtFecha(), ResumenDiarioService, soloFecha(), Injectable
+### Community 21 - "facturacion.module.ts"
+Cohesion: 0.11
+Nodes (12): EncryptionService, Injectable, FacturacionModule, Module, CertificadoExtraido, FirmaService, ResultadoFirma, Injectable (+4 more)
 
-### Community 22 - "perfiles-tributarios.controller.ts"
-Cohesion: 0.27
-Nodes (7): Roles(), ROLES_KEY, RolesGuard, Injectable, RequestAutenticada, GenerarResumenDto, IsDateString
+### Community 22 - "productos.controller.ts"
+Cohesion: 0.20
+Nodes (9): Roles(), ROLES_KEY, RolesGuard, Injectable, ROLES_CAJA, TenantRequest, ROLES_GESTION_INVENTARIO, ROLES_LECTURA_PRODUCTOS (+1 more)
 
 ### Community 23 - "producto.mapper.ts"
 Cohesion: 0.18
 Nodes (12): IdNombre, LoteEntrada, MedicamentoEntrada, NumericValue, PresentacionEntrada, ProductoDetalleEntrada, ProductoListaCamposExtendidos, ProductoListaFila (+4 more)
 
-### Community 24 - "comprobante-validation.service.ts"
-Cohesion: 0.10
-Nodes (18): EmitirComprobanteDto, ApiProperty, ApiPropertyOptional, IsIn, IsOptional, IsUUID, Injectable, VentaToComprobanteMapper (+10 more)
+### Community 24 - "comprobante-validation.spec.ts"
+Cohesion: 0.14
+Nodes (11): EmitirComprobanteDto, ApiProperty, IsIn, IsUUID, ComprobanteValidationService, Injectable, configOk(), OpcionesMock (+3 more)
 
 ### Community 25 - "CatalogosController"
 Cohesion: 0.20
@@ -356,25 +350,25 @@ Nodes (18): ApiParam, Req, CatalogosController, ApiBearerAuth, ApiOperation, Api
 Cohesion: 0.09
 Nodes (21): compilerOptions, allowSyntheticDefaultImports, declaration, emitDecoratorMetadata, esModuleInterop, experimentalDecorators, forceConsistentCasingInFileNames, ignoreDeprecations (+13 more)
 
-### Community 27 - "auth.module.ts"
-Cohesion: 0.13
+### Community 27 - "AuthService"
+Cohesion: 0.12
 Nodes (12): AuthController, Body, Controller, HttpCode, Post, Public, AuthService, Injectable (+4 more)
 
-### Community 28 - "gastos.controller.ts"
-Cohesion: 0.16
-Nodes (10): GastosController, Body, Controller, Delete, Get, Param, Post, Query (+2 more)
+### Community 28 - "QueryProveedoresDto"
+Cohesion: 0.22
+Nodes (14): CreateProveedorDto, QueryProveedoresDto, IsEmail, IsInt, IsOptional, IsString, Length, Matches (+6 more)
 
 ### Community 29 - "DashboardController"
 Cohesion: 0.18
 Nodes (9): DashboardController, ApiOperation, ApiTags, Controller, Get, Headers, Query, Request (+1 more)
 
 ### Community 30 - "FacturacionService"
-Cohesion: 0.11
-Nodes (18): FacturacionController, ApiOperation, ApiTags, Body, Controller, Get, Headers, HttpCode (+10 more)
+Cohesion: 0.12
+Nodes (17): FacturacionController, ApiOperation, ApiTags, Body, Controller, Get, Headers, HttpCode (+9 more)
 
-### Community 31 - "CajasService"
-Cohesion: 0.11
-Nodes (16): CajasAutoCierreService, Injectable, CajaContext, CajasService, Injectable, AperturaCajaDto, CierreCajaDto, MovimientoCajaDto (+8 more)
+### Community 31 - "RealtimeService"
+Cohesion: 0.12
+Nodes (14): CajaContext, CajasService, Injectable, AperturaCajaDto, CierreCajaDto, MovimientoCajaDto, TipoMovimientoCaja, IsEnum (+6 more)
 
 ### Community 32 - "EscannerGateway"
 Cohesion: 0.09
@@ -385,8 +379,8 @@ Cohesion: 0.16
 Nodes (7): EventsGateway, ConnectedSocket, Injectable, MessageBody, SubscribeMessage, WebSocketGateway, WebSocketServer
 
 ### Community 34 - "users.module.ts"
-Cohesion: 0.15
-Nodes (8): Controller, Get, Param, UsersController, Module, UsersModule, Injectable, UsersService
+Cohesion: 0.27
+Nodes (4): Module, UsersModule, Injectable, UsersService
 
 ### Community 35 - "devDependencies"
 Cohesion: 0.11
@@ -412,17 +406,17 @@ Nodes (17): scripts, build, certs:qz:dev, db:seed, db:seed-demo, format, lint, r
 Cohesion: 0.12
 Nodes (15): ComprobantesImpresionController, ApiOperation, ApiTags, Body, Controller, Get, Param, Post (+7 more)
 
-### Community 41 - "perfiles-tributarios.service.ts"
-Cohesion: 0.17
-Nodes (10): EncryptionService, Injectable, comprobantesPermitidos(), errorCoherenciaRucRegimen(), motivoBloqueoEmision(), NOMBRES_REGIMEN, NOMBRES_TIPO, PERMISOS_POR_REGIMEN (+2 more)
+### Community 41 - "comprobante-validation.service.ts"
+Cohesion: 0.20
+Nodes (13): RegimenTributario, comprobantesPermitidos(), errorCoherenciaRucRegimen(), motivoBloqueoEmision(), NOMBRES_REGIMEN, NOMBRES_TIPO, PERMISOS_POR_REGIMEN, puedeEmitir() (+5 more)
 
 ### Community 42 - "ComprobanteStorageService"
-Cohesion: 0.16
-Nodes (4): ComprobanteStorageService, FileStorageProvider, LocalFileStorageProvider, Injectable
+Cohesion: 0.22
+Nodes (3): ComprobanteStorageService, LocalFileStorageProvider, Injectable
 
-### Community 43 - "PosventaController"
-Cohesion: 0.24
-Nodes (11): PosventaController, ApiOperation, ApiTags, Body, Controller, Get, HttpCode, Param (+3 more)
+### Community 43 - "TenantGuard"
+Cohesion: 0.27
+Nodes (5): TenantGuard, Injectable, RequestAutenticada, GenerarResumenDto, IsDateString
 
 ### Community 44 - "resumen-diario-xml.builder.ts"
 Cohesion: 0.25
@@ -432,13 +426,17 @@ Nodes (7): DatosResumenDiario, fmt(), fmtFecha(), LineaResumenDiario, ResumenDia
 Cohesion: 0.20
 Nodes (5): PrismaModule, Global, Module, PrismaService, Injectable
 
-### Community 47 - "public.decorator.ts"
-Cohesion: 0.12
-Nodes (11): AppController, ApiTags, Controller, Get, Public, AppService, Injectable, IS_PUBLIC_KEY (+3 more)
+### Community 46 - "auth.module.ts"
+Cohesion: 0.13
+Nodes (8): AuthModule, Module, PlatformAdminGuard, Injectable, JwtStrategy, Injectable, DiagnosticosModule, Module
+
+### Community 47 - "AppController"
+Cohesion: 0.20
+Nodes (7): AppController, ApiTags, Controller, Get, Public, AppService, Injectable
 
 ### Community 48 - "sunat-soap.client.ts"
-Cohesion: 0.18
-Nodes (10): AmbienteSunat, FormaPago, RegimenTributario, SistemaEmision, TipoContribuyente, CredencialesSol, ENDPOINTS, SunatSendBillResult (+2 more)
+Cohesion: 0.22
+Nodes (8): AmbienteSunat, FormaPago, UnidadMedidaSunat, CredencialesSol, ENDPOINTS, SunatSendBillResult, SunatStatusResult, SunatTicketResult
 
 ### Community 49 - "usuarios.controller.ts"
 Cohesion: 0.18
@@ -513,12 +511,12 @@ Cohesion: 0.31
 Nodes (4): QzSecurityModule, Module, QzSecurityService, Injectable
 
 ### Community 71 - "xml-builder.service.ts"
-Cohesion: 0.16
-Nodes (13): esExonerado(), esGravado(), esquemaTributario(), fmt(), fmtFecha(), fmtHora(), NS, Injectable (+5 more)
+Cohesion: 0.20
+Nodes (10): esExonerado(), esGravado(), esquemaTributario(), fmt(), fmtFecha(), fmtHora(), NS, Injectable (+2 more)
 
 ### Community 73 - ""comprobantes_electronicos""
-Cohesion: 0.21
-Nodes (14): "clientes", "comprobantes_electronicos", "comprobantes_electronicos", "comprobantes_electronicos_detalles", "comprobantes_intentos_envio", "configuraciones_tributarias", "resumenes_diarios", "resumenes_diarios_detalles" (+6 more)
+Cohesion: 0.29
+Nodes (11): "clientes", "comprobantes_electronicos", "comprobantes_electronicos_detalles", "comprobantes_intentos_envio", "configuraciones_tributarias", "resumenes_diarios", "resumenes_diarios_detalles", "empresas" (+3 more)
 
 ### Community 75 - "UpdateProductoDto"
 Cohesion: 0.22
@@ -528,9 +526,9 @@ Nodes (8): ApiPropertyOptional, IsBoolean, IsNumber, IsOptional, IsString, Min, 
 Cohesion: 0.20
 Nodes (9): Compile and run the project, Deployment, Description, License, Project setup, Resources, Run tests, Stay in touch (+1 more)
 
-### Community 96 - "RealtimeService"
-Cohesion: 0.20
-Nodes (3): dto, RealtimeService, Injectable
+### Community 96 - "storage.service.ts"
+Cohesion: 0.25
+Nodes (5): StorageModule, Module, ResultadoSubida, ResultadoTestConexion, SubirArchivoOptions
 
 ### Community 97 - "seed-tienda-prueba.js"
 Cohesion: 0.52
@@ -540,21 +538,21 @@ Nodes (6): bcrypt, { Client }, ensure(), main(), one(), TIENDA
 Cohesion: 0.33
 Nodes (6): backendRoot, certificatePath, certsDirectory, ensureCertsDirectory(), generateCertificate(), privateKeyPath
 
-### Community 106 - "PrismaService"
-Cohesion: 0.15
-Nodes (6): JwtStrategy, Injectable, createPrismaMock(), resolvedMock(), PrismaService, Injectable
+### Community 106 - "proveedores.service.ts"
+Cohesion: 0.38
+Nodes (3): isValidPeruvianRuc(), createPrismaMock(), resolvedMock()
 
 ### Community 108 - "ComprobantesPublicosController"
 Cohesion: 0.24
 Nodes (7): ComprobantesPublicosController, Controller, Get, Param, Public, Request, UseGuards
 
-### Community 112 - "administracion-general.module.ts"
-Cohesion: 0.18
-Nodes (8): AuthModule, Module, AdministracionGeneralModule, Module, DiagnosticosModule, Module, ProductsModule, Module
+### Community 112 - "UsersController"
+Cohesion: 0.33
+Nodes (4): Controller, Get, Param, UsersController
 
-### Community 117 - "productos.controller.ts"
-Cohesion: 0.25
-Nodes (4): GastosAdminGuard, Injectable, ROLES_GESTION_INVENTARIO, ROLES_LECTURA_PRODUCTOS
+### Community 117 - "SeriesDocumentosController"
+Cohesion: 0.18
+Nodes (13): SeriesDocumentosController, ApiOperation, ApiTags, Body, Controller, Delete, Get, Param (+5 more)
 
 ### Community 124 - "Unicidad por botica y evidencia RLS"
 Cohesion: 0.29
@@ -565,80 +563,72 @@ Cohesion: 0.25
 Nodes (7): DiagnosticosController, ApiOperation, ApiResponse, ApiTags, Controller, Get, UseGuards
 
 ### Community 159 - "CreateVentaDto"
-Cohesion: 0.21
-Nodes (15): ArrayMinSize, IsArray, IsInt, CreateVentaDto, DatosClienteDto, DetalleVentaItemDto, ApiProperty, ApiPropertyOptional (+7 more)
+Cohesion: 0.20
+Nodes (16): CreateVentaDto, DatosClienteDto, DetalleVentaItemDto, ApiProperty, ApiPropertyOptional, ArrayMinSize, IsArray, IsInt (+8 more)
 
-### Community 160 - "CreateGastoDto"
-Cohesion: 0.13
+### Community 160 - "gastos.controller.ts"
+Cohesion: 0.15
 Nodes (11): CreateGastoDto, IsDateString, IsIn, IsNumber, IsOptional, IsString, IsUUID, Min (+3 more)
 
 ### Community 161 - "dashboard.service.ts"
-Cohesion: 0.40
-Nodes (4): DashboardQueryDto, ApiPropertyOptional, IsOptional, IsString
+Cohesion: 0.22
+Nodes (6): DashboardService, Injectable, DashboardQueryDto, ApiPropertyOptional, IsOptional, IsString
 
-### Community 162 - "ImprimirComprobanteDto"
-Cohesion: 0.50
-Nodes (3): ImprimirComprobanteDto, IsEnum, IsNotEmpty
+### Community 162 - "tenant.guard.ts"
+Cohesion: 0.19
+Nodes (7): IS_PUBLIC_KEY, Public(), GlobalAuthGuard, Injectable, ImprimirComprobanteDto, IsEnum, IsNotEmpty
 
-### Community 163 - "RequirePermissions"
-Cohesion: 0.21
-Nodes (9): PERMISSIONS_KEY, RequirePermissions(), PermissionsGuard, Injectable, TenantGuard, Injectable, ROLES_CAJA, TenantRequest (+1 more)
+### Community 163 - "permissions.guard.ts"
+Cohesion: 0.18
+Nodes (8): PERMISSIONS_KEY, PermissionsGuard, Injectable, QueryReportesDto, ApiPropertyOptional, IsOptional, IsString, IsUUID
 
 ### Community 164 - "ReportesController"
 Cohesion: 0.30
 Nodes (9): ReportesController, ApiOperation, ApiTags, Controller, Get, Headers, Query, Request (+1 more)
 
 ### Community 165 - "events.gateway.ts"
-Cohesion: 0.19
-Nodes (4): UserConnectionInfo, SocketAuthService, SocketUser, Injectable
+Cohesion: 0.15
+Nodes (5): dto, UserConnectionInfo, SocketAuthService, SocketUser, Injectable
 
 ### Community 166 - "GuardarConfiguracionTributariaDto"
 Cohesion: 0.15
 Nodes (12): AMBIENTES, GuardarConfiguracionTributariaDto, REGIMENES, ApiProperty, ApiPropertyOptional, IsBoolean, IsIn, IsOptional (+4 more)
 
-### Community 167 - "posventa.service.ts"
-Cohesion: 0.15
+### Community 167 - "posventa.controller.ts"
+Cohesion: 0.19
 Nodes (6): CreateCambioDto, CreateDevolucionDto, CreateGarantiaDto, CreateReclamoDto, PosventaService, Injectable
 
-### Community 168 - "cajas.module.ts"
-Cohesion: 0.33
-Nodes (5): CajasModule, Module, EventsModule, Global, Module
+### Community 173 - "gastos.module.ts"
+Cohesion: 0.22
+Nodes (4): GastosModule, Module, GastosService, Injectable
 
-### Community 173 - "dashboard.module.ts"
-Cohesion: 0.29
-Nodes (4): DashboardModule, Module, DashboardService, Injectable
+### Community 187 - "ClientesController"
+Cohesion: 0.19
+Nodes (15): HttpCode, Query, ClientesController, ApiOperation, ApiTags, Body, Controller, Delete (+7 more)
 
-### Community 176 - "perfiles-tributarios.module.ts"
-Cohesion: 0.40
-Nodes (4): FacturacionModule, Module, PerfilesTributariosModule, Module
-
-### Community 177 - "emission-provider.interface.ts"
-Cohesion: 0.40
-Nodes (3): EmissionContext, EmissionResult, IEmissionProvider
-
-### Community 193 - "PerfilesTributariosController"
-Cohesion: 0.06
-Nodes (43): Length, Matches, Put, Roles, requiereCertificadoDigital(), CreatePerfilTributarioDto, REGIMENES, TIPOS_CONTRIBUYENTE (+35 more)
+### Community 193 - "StorageController"
+Cohesion: 0.13
+Nodes (16): ApiConsumes, Roles, StorageController, ApiOperation, ApiTags, Body, Controller, Delete (+8 more)
 
 ## Knowledge Gaps
-- **226 isolated node(s):** `CajaContext`, `FormaPago`, `TipoContribuyente`, `PERMISOS_POR_REGIMEN`, `NOMBRES_TIPO` (+221 more)
+- **218 isolated node(s):** `name`, `version`, `description`, `author`, `private` (+213 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **110 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **105 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `RequirePermissions()` connect `RequirePermissions` to `ComprasService`, `catalogos.controller.ts`, `clientes.controller.ts`, `ProveedoresService`, `StorageService`, `VentasService`, `UsuariosController`, `ResumenDiarioController`, `reportes.controller.ts`, `ProductosService`, `perfiles-tributarios.controller.ts`, `CatalogosController`, `gastos.controller.ts`, `DashboardController`, `FacturacionService`, `ReportesController`, `ComprobantesImpresionService`, `PosventaController`, `usuarios.controller.ts`, `CajasController`, `productos.controller.ts`?**
-  _High betweenness centrality (0.187) - this node is a cross-community bridge._
-- **Why does `PdfGeneratorService` connect `PdfGeneratorService` to `facturacion.service.ts`, `facturacion.module.ts`?**
-  _High betweenness centrality (0.173) - this node is a cross-community bridge._
-- **Why does `dependencies` connect `dependencies` to `passport`, `PdfGeneratorService`, `@types/pdfmake`, `axios`, `class-validator`, `@nestjs/platform-express`, `@supabase/supabase-js`, `package.json`, `class-transformer`, `dotenv`, `@nestjs/common`, `@nestjs/config`, `@nestjs/core`, `@nestjs/jwt`, `@nestjs/platform-socket.io`, `@nestjs/swagger`, `@nestjs/websockets`, `passport-jwt`, `pdfmake`, `pg`, `@prisma/adapter-pg`, `@prisma/client`, `reflect-metadata`, `rxjs`, `socket.io`, `swagger-ui-express`, `@types/xmldom`, `xmlbuilder2`, `xmldom`, `@nestjs/passport`, `fast-xml-parser`, `node-forge`, `xml-crypto`, `prisma`?**
+- **Why does `RequirePermissions()` connect `RequirePermissions` to `ComprasService`, `catalogos.controller.ts`, `clientes.controller.ts`, `ProveedoresService`, `ConfiguracionTributariaController`, `VentasService`, `CreateSerieDocumentoDto`, `ProductosService`, `productos.controller.ts`, `CatalogosController`, `DashboardController`, `FacturacionService`, `gastos.controller.ts`, `tenant.guard.ts`, `permissions.guard.ts`, `ReportesController`, `posventa.controller.ts`, `ComprobantesImpresionService`, `TenantGuard`, `usuarios.controller.ts`, `CajasController`, `StorageController`?**
   _High betweenness centrality (0.167) - this node is a cross-community bridge._
-- **What connects `CajaContext`, `FormaPago`, `TipoContribuyente` to the rest of the system?**
-  _226 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Why does `PrismaService` connect `PrismaService` to `AdministracionGeneralService`, `ComprasService`, `catalogos.controller.ts`, `clientes.controller.ts`, `ComprobantePrintData`, `CreateSerieDocumentoDto`, `app.module.ts`, `products.controller.ts`, `ReportesService`, `facturacion.service.ts`, `facturacion.module.ts`, `comprobante-validation.spec.ts`, `RealtimeService`, `gastos.controller.ts`, `dashboard.service.ts`, `users.module.ts`, `permissions.guard.ts`, `events.gateway.ts`, `productos.service.ts`, `posventa.controller.ts`, `comprobante-validation.service.ts`, `resumen-diario-xml.builder.ts`, `gastos.module.ts`, `auth.module.ts`, `usuarios.controller.ts`, `storage.service.ts`, `proveedores.service.ts`?**
+  _High betweenness centrality (0.144) - this node is a cross-community bridge._
+- **Why does `PdfGeneratorService` connect `PdfGeneratorService` to `facturacion.service.ts`, `facturacion.module.ts`?**
+  _High betweenness centrality (0.135) - this node is a cross-community bridge._
+- **What connects `name`, `version`, `description` to the rest of the system?**
+  _218 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `PrintingQzService` be split into smaller, more focused modules?**
   _Cohesion score 0.09523809523809523 - nodes in this community are weakly interconnected._
 - **Should `AdministracionGeneralService` be split into smaller, more focused modules?**
-  _Cohesion score 0.0673274094326726 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.06918918918918919 - nodes in this community are weakly interconnected._
 - **Should `ComprasService` be split into smaller, more focused modules?**
-  _Cohesion score 0.05328218243819267 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05217391304347826 - nodes in this community are weakly interconnected._

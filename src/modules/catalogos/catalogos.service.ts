@@ -137,6 +137,11 @@ export class CatalogosService {
     const tipoValido = this.validarTipo(tipo);
     const config = CATALOGOS_CONFIG[tipoValido];
 
+    // Normalizar a mayúsculas para presentación profesional
+    const nombreNormalizado = dto.nombre.trim().toUpperCase();
+    const abreviaturaNormalizada = dto.abreviatura?.trim().toUpperCase();
+    const paisNormalizado = dto.pais?.trim().toUpperCase();
+
     // Construir campos dinámicamente según el catálogo
     const campos: string[] = [
       'id',
@@ -147,32 +152,32 @@ export class CatalogosService {
     ];
     const valores: any[] = [
       await this.generarUuid(),
-      dto.nombre,
+      nombreNormalizado,
       boticaId,
       userId,
       userId,
     ];
 
     // Agregar campos especiales según el catálogo
-    if (config.camposEspeciales.includes('abreviatura') && dto.abreviatura) {
+    if (config.camposEspeciales.includes('abreviatura') && abreviaturaNormalizada) {
       campos.push('abreviatura');
-      valores.push(dto.abreviatura);
+      valores.push(abreviaturaNormalizada);
     }
     if (config.camposEspeciales.includes('descripcion') && dto.descripcion) {
       campos.push('descripcion');
-      valores.push(dto.descripcion);
+      valores.push(dto.descripcion.trim());
     }
-    if (config.camposEspeciales.includes('pais') && dto.pais) {
+    if (config.camposEspeciales.includes('pais') && paisNormalizado) {
       campos.push('pais');
-      valores.push(dto.pais);
+      valores.push(paisNormalizado);
     }
     if (config.camposEspeciales.includes('telefono') && dto.telefono) {
       campos.push('telefono');
-      valores.push(dto.telefono);
+      valores.push(dto.telefono.trim());
     }
     if (config.camposEspeciales.includes('email') && dto.email) {
       campos.push('email');
-      valores.push(dto.email);
+      valores.push(dto.email.trim().toLowerCase());
     }
 
     const placeholders = valores.map((_, i) => `$${i + 1}`).join(', ');
@@ -184,7 +189,7 @@ export class CatalogosService {
 
     try {
       const rows = await this.prisma.queryRaw(query, valores);
-      this.logger.log(`✅ Creado item en ${config.tabla}: ${dto.nombre}`);
+      this.logger.log(`✅ Creado item en ${config.tabla}: ${nombreNormalizado}`);
       return rows[0] as ICatalogoItem;
     } catch (error: any) {
       // Capturar error de índice único (PostgreSQL code 23505)
@@ -222,7 +227,7 @@ export class CatalogosService {
 
     if (dto.nombre !== undefined) {
       campos.push(`nombre = $${paramIndex}`);
-      valores.push(dto.nombre);
+      valores.push(dto.nombre.trim().toUpperCase());
       paramIndex++;
     }
     if (
@@ -230,7 +235,7 @@ export class CatalogosService {
       dto.abreviatura !== undefined
     ) {
       campos.push(`abreviatura = $${paramIndex}`);
-      valores.push(dto.abreviatura);
+      valores.push(dto.abreviatura ? dto.abreviatura.trim().toUpperCase() : null);
       paramIndex++;
     }
     if (
@@ -238,12 +243,12 @@ export class CatalogosService {
       dto.descripcion !== undefined
     ) {
       campos.push(`descripcion = $${paramIndex}`);
-      valores.push(dto.descripcion);
+      valores.push(dto.descripcion ? dto.descripcion.trim() : null);
       paramIndex++;
     }
     if (config.camposEspeciales.includes('pais') && dto.pais !== undefined) {
       campos.push(`pais = $${paramIndex}`);
-      valores.push(dto.pais);
+      valores.push(dto.pais ? dto.pais.trim().toUpperCase() : null);
       paramIndex++;
     }
     if (
