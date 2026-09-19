@@ -160,8 +160,8 @@
     "semantic_hash": ""
   },
   "src/app.module.ts": {
-    "mtime": 1789143446.3294516,
-    "ast_hash": "1c65a21d4a73c3d97e885069a1df4136",
+    "mtime": 1788542315.2303936,
+    "ast_hash": "5d3020e0724c7137432e6e8fe6556020",
     "semantic_hash": ""
   },
   "src/app.service.ts": {
@@ -335,8 +335,8 @@
     "semantic_hash": "490b5902e858e0e961f00cf3731327b9"
   },
   "src/modules/catalogos/catalogos.service.ts": {
-    "mtime": 1789143888.9808786,
-    "ast_hash": "3559f53056285395c709105c826bd5b8",
+    "mtime": 1785933166.2960076,
+    "ast_hash": "c623224ab03582f81beb53f53ee239f3",
     "semantic_hash": ""
   },
   "src/modules/catalogos/constants/catalogos.constants.ts": {
@@ -615,8 +615,8 @@
     "semantic_hash": "de6b4eb9864361e9fb0d5eaafd0a8fd3"
   },
   "src/modules/facturacion/services/facturacion.service.ts": {
-    "mtime": 1788623938.736931,
-    "ast_hash": "7fe6b92230a4b1dbd5971d3e349ac565",
+    "mtime": 1788556300.3759668,
+    "ast_hash": "b64a501df8ff148da98d917679ecfb50",
     "semantic_hash": ""
   },
   "src/modules/facturacion/services/resumen-diario.service.ts": {
@@ -835,8 +835,8 @@
     "semantic_hash": "6ca2b9a4ebe99188c2c84947beaa88e6"
   },
   "src/modules/productos/productos.service.ts": {
-    "mtime": 1789143870.7988517,
-    "ast_hash": "92bba267fe6bab51418c230a4bef7bd3",
+    "mtime": 1787283012.2438524,
+    "ast_hash": "ea8b07c0a526851a5f586e547477b03b",
     "semantic_hash": ""
   },
   "src/modules/productos/productos.tenant-uniqueness.spec.ts": {
@@ -1240,8 +1240,8 @@
     "semantic_hash": ""
   },
   "src/modules/perfiles-tributarios/dto/create-perfil-tributario.dto.ts": {
-    "mtime": 1788623938.736931,
-    "ast_hash": "42b0c5b60aab8981263c7bb17f884990",
+    "mtime": 1788555015.2801347,
+    "ast_hash": "ad2c630fb183f43d053f1d2e6003a4d5",
     "semantic_hash": ""
   },
   "src/modules/perfiles-tributarios/dto/guardar-config-emision.dto.ts": {
@@ -1255,8 +1255,8 @@
     "semantic_hash": ""
   },
   "src/modules/perfiles-tributarios/perfiles-tributarios.controller.ts": {
-    "mtime": 1788623938.736931,
-    "ast_hash": "d913c12fe57d6ed6b90aba23def4dbad",
+    "mtime": 1788554850.4011931,
+    "ast_hash": "918fa9ebe2c743b071d7c1e7ac5bf7dc",
     "semantic_hash": ""
   },
   "src/modules/perfiles-tributarios/perfiles-tributarios.module.ts": {
@@ -1265,128 +1265,8 @@
     "semantic_hash": ""
   },
   "src/modules/perfiles-tributarios/perfiles-tributarios.service.ts": {
-    "mtime": 1788623938.736931,
-    "ast_hash": "4e44d8530a75de17fbce6b6aec93b871",
-    "semantic_hash": ""
-  },
-  "scripts/normalize-uppercase.js": {
-    "mtime": 1789174087.397159,
-    "ast_hash": "50a55b38e96e392a5fdcbc0acffac6ed",
-    "semantic_hash": ""
-  },
-  "src/modules/biblioteca-productos/biblioteca-productos.controller.ts": {
-    "mtime": 1789143431.732991,
-    "ast_hash": "a134641ad59d53629b58aa2a317e081a",
-    "semantic_hash": ""
-  },
-  "src/modules/biblioteca-productos/biblioteca-productos.module.ts": {
-    "mtime": 1789143437.7653828,
-    "ast_hash": "7c9e2e51e7373787110e123a1b49e1b0",
-    "semantic_hash": ""
-  },
-  "src/modules/biblioteca-productos/biblioteca-productos.service.spec.ts": {
-    "mtime": 1789143562.7251387,
-    "ast_hash": "0cb00c0861ac3d87bbc586f119f6bd4b",
-    "semantic_hash": ""
-  },
-  "src/modules/biblioteca-productos/biblioteca-productos.service.ts": {
-    "mtime": 1789143914.9068146,
-    "ast_hash": "c95ceff9b7dfc68953b732e423db8c21",
-    "semantic_hash": ""
-  },
-  "src/modules/biblioteca-productos/dto/asociar-local.dto.ts": {
-    "mtime": 1789143391.6894362,
-    "ast_hash": "a4f0c7c3fa0260d89f087d08b66bdc02",
-    "semantic_hash": ""
-  },
-  "src/modules/biblioteca-productos/dto/create-catalogo-maestro.dto.ts": {
-    "mtime": 1789143376.3937793,
-    "ast_hash": "8769f70cf6dc244fc05c2dd416688f42",
-    "semantic_hash": ""
-  },
-  "src/modules/biblioteca-productos/dto/query-biblioteca.dto.ts": {
-    "mtime": 1789143383.1681125,
-    "ast_hash": "9e912fa8be806cf886f2dc16ead3d278",
-    "semantic_hash": ""
-  },
-  "src/modules/tax-engine/controllers/tax-engine.controller.ts": {
-    "mtime": 1788623938.736931,
-    "ast_hash": "3b6497440458b128281321d4124fea7c",
-    "semantic_hash": ""
-  },
-  "src/modules/tax-engine/dto/consolidate-daily-sales.dto.ts": {
-    "mtime": 1788623724.3866081,
-    "ast_hash": "b962bb09bf0cf874c54edf0c3d5cc3ec",
-    "semantic_hash": ""
-  },
-  "src/modules/tax-engine/dto/evaluate-sale-tax.dto.ts": {
-    "mtime": 1788623715.2920475,
-    "ast_hash": "1f4843fab9c5a011c304a7635324b32a",
-    "semantic_hash": ""
-  },
-  "src/modules/tax-engine/dto/tax-evaluation-result.dto.ts": {
-    "mtime": 1788623720.0420463,
-    "ast_hash": "b613f4b39b3205a6467f5aebd6905320",
-    "semantic_hash": ""
-  },
-  "src/modules/tax-engine/interfaces/tax-rule-strategy.interface.ts": {
-    "mtime": 1788623710.3397248,
-    "ast_hash": "ecff153b94d488528b016c20064ae9b8",
-    "semantic_hash": ""
-  },
-  "src/modules/tax-engine/rules/general-rule.strategy.ts": {
-    "mtime": 1788623748.1258185,
-    "ast_hash": "fda5e7ab40d08e6aa62c2f7754117c5b",
-    "semantic_hash": ""
-  },
-  "src/modules/tax-engine/rules/nrus-rule.strategy.ts": {
-    "mtime": 1788623730.593727,
-    "ast_hash": "60ab28b8dffaf0c1dc4469085f9e5558",
-    "semantic_hash": ""
-  },
-  "src/modules/tax-engine/rules/rer-rule.strategy.ts": {
-    "mtime": 1788623742.5359664,
-    "ast_hash": "50497bc381868044f98d34e7e060809d",
-    "semantic_hash": ""
-  },
-  "src/modules/tax-engine/rules/rmt-rule.strategy.ts": {
-    "mtime": 1788623736.750058,
-    "ast_hash": "92bfcf121925a8e3660811e6b36d327b",
-    "semantic_hash": ""
-  },
-  "src/modules/tax-engine/services/consolidation.service.spec.ts": {
-    "mtime": 1788623962.1542468,
-    "ast_hash": "d66239cbe33d6cd151b1316a52a72b13",
-    "semantic_hash": ""
-  },
-  "src/modules/tax-engine/services/consolidation.service.ts": {
-    "mtime": 1788623992.152312,
-    "ast_hash": "cb9c05c93ceba2754bff307854554478",
-    "semantic_hash": ""
-  },
-  "src/modules/tax-engine/services/sync-queue.service.ts": {
-    "mtime": 1788623938.736931,
-    "ast_hash": "4385e6468e85609bdd2d59227f215ec6",
-    "semantic_hash": ""
-  },
-  "src/modules/tax-engine/services/tax-engine.service.spec.ts": {
-    "mtime": 1788623968.0061688,
-    "ast_hash": "927a3a0f6e3436573cbccba2b626eb79",
-    "semantic_hash": ""
-  },
-  "src/modules/tax-engine/services/tax-engine.service.ts": {
-    "mtime": 1788623938.7379227,
-    "ast_hash": "41e79ff34daf2ea412b37c1a39ea18b1",
-    "semantic_hash": ""
-  },
-  "src/modules/tax-engine/services/tax-validator.service.ts": {
-    "mtime": 1788623753.3853903,
-    "ast_hash": "32b36a8e2529367ba425d822695e861b",
-    "semantic_hash": ""
-  },
-  "src/modules/tax-engine/tax-engine.module.ts": {
-    "mtime": 1788623784.6424413,
-    "ast_hash": "0e42b1f7e8ebd58267a7253d9c5410b6",
+    "mtime": 1788554818.3270879,
+    "ast_hash": "bbed6e60fad071771b6c8a46592fd432",
     "semantic_hash": ""
   }
 }

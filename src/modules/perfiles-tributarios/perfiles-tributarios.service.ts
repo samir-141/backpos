@@ -282,6 +282,41 @@ export class PerfilesTributariosService {
           } as never,
         });
 
+    // Sincronizar con tabla de compatibilidad configuraciones_tributarias
+    try {
+      const datosSync: any = {
+        ruc: perfil.ruc,
+        razon_social: perfil.razon_social,
+        nombre_comercial: perfil.nombre_comercial,
+        direccion_fiscal: perfil.direccion_fiscal,
+        ubigeo: perfil.ubigeo,
+        departamento: perfil.departamento,
+        provincia: perfil.provincia,
+        distrito: perfil.distrito,
+        regimen_tributario: perfil.regimen_tributario,
+        sistema_emision: config.sistema_emision,
+        ambiente: config.ambiente,
+        perfil_tributario_id: perfil.id,
+      };
+      if (config.sol_usuario_encriptado) {
+        datosSync.sol_usuario_encriptado = config.sol_usuario_encriptado;
+      }
+      if (config.sol_clave_encriptada) {
+        datosSync.sol_clave_encriptada = config.sol_clave_encriptada;
+      }
+
+      await this.prisma.configuraciones_tributarias.upsert({
+        where: { botica_id: boticaId },
+        create: {
+          botica_id: boticaId,
+          ...datosSync,
+        },
+        update: datosSync,
+      });
+    } catch {
+      // Ignorar fallo de sincronización legacy
+    }
+
     return this.sanitizar({ ...perfil, configuracion_emision: config });
   }
 

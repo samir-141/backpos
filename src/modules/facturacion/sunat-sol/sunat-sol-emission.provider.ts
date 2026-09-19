@@ -1,0 +1,155 @@
+import { Injectable, Logger } from '@nestjs/common';
+import {
+  EmissionContext,
+  EmissionResult,
+  IEmissionProvider,
+} from '../router/emission-provider.interface';
+import { SunatSolBotService } from './sunat-sol-bot.service';
+import { ComprobanteStorageService } from '../storage/comprobante-storage.service';
+import { EncryptionService } from '../../../common/security/encryption.service';
+import { PrismaService } from '../../../prisma/prisma.service';
+import { EstadoComprobante } from '../domain/estado-comprobante.enum';
+
+@Injectable()
+export class SunatSolEmissionProvider implements IEmissionProvider {
+  private readonly logger = new Logger(SunatSolEmissionProvider.name);
+  readonly nombre = 'SUNAT_SOL_BOT';
+
+  constructor(
+    private readonly botService: SunatSolBotService,
+    private readonly storage: ComprobanteStorageService,
+    private readonly encryption: EncryptionService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  async emitir(ctx: EmissionContext): Promise<EmissionResult> {
+    const { boticaId, comprobante } = ctx;
+    this.logger.log(
+      `Ejecutando proveedor SUNAT_SOL_BOT para comprobante ${comprobante.serie}-${comprobante.numero}, Botica: ${boticaId}`,
+    );
+
+    // 1. Obtener configuración tributaria y credenciales SOL de la botica
+    let ruc = '';
+    let solUsuario: string | undefined;
+    let solClave: string | undefined;
+    let esDni = false;
+    let ambiente = 'BETA';
+
+    const perfil = await this.prisma.perfiles_tributarios.findFirst({
+      where: {
+        botica_id: boticaId,
+        ...(ctx.perfilTributario?.id ? { id: ctx.perfilTributario.id } : {}),
+        deleted_at: null,
+      },
+      include: { configuracion_emision: true },
+    });
+
+    if (perfil?.configuracion_emision?.sol_clave_encriptada) {
+      ruc = perfil.ruc;
+      solClave = this.encryption.decrypt(perfil.configuracion_emision.sol_clave_encriptada);
+      if (perfil.configuracion_emision.sol_usuario_encriptado) {
+        solUsuario = this.encryption.decrypt(perfil.configuracion_emision.sol_usuario_encriptado);
+      }
+      ambiente = perfil.configuracion_emision.ambiente || 'BETA';
+      esDni = !solUsuario || /^\d{8}$/.test(solUsuario) || perfil.ruc?.length === 8;
+    } else {
+      const config = await this.prisma.configuraciones_tributarias.findUnique({
+        where: { botica_id: boticaId },
+      });
+
+      if (!config || !config.sol_clave_encriptada) {
+        return {
+          exito: false,
+          estado: EstadoComprobante.ERROR_ENVIO,
+          codigo_respuesta: 'CREDENTIALS_MISSING',
+          mensaje_respuesta: 'No se han configurado las credenciales SOL para la emisión automatizada',
+        };
+      }
+
+      ruc = config.ruc;
+      solClave = this.encryption.decrypt(config.sol_clave_encriptada);
+      if (config.sol_usuario_encriptado) {
+        solUsuario = this.encryption.decrypt(config.sol_usuario_encriptado);
+      }
+      ambiente = config.ambiente || 'BETA';
+      esDni = !solUsuario || /^\d{8}$/.test(solUsuario) || config.ruc?.length === 8;
+    }
+
+    // 2. Mapear receptor
+    const receptor = {
+      tipoDoc: comprobante.cliente_tipo_doc || '1',
+      numeroDoc: comprobante.cliente_numero_doc || undefined,
+      razonSocialODatos: comprobante.cliente_nombre || undefined,
+      direccion: comprobante.cliente_direccion || undefined,
+    };
+
+    // 3. Mapear ítems del comprobante
+    const items = (comprobante.detalles || []).map((det: any) => ({
+      tipo: (det.tipo_item === 'SERVICIO' ? 'SERVICIO' : 'BIEN') as 'BIEN' | 'SERVICIO',
+      codigo: det.codigo_producto || det.producto_id,
+      descripcion: det.descripcion || 'Producto farmacéutico',
+      cantidad: Number(det.cantidad || 1),
+      precioUnitario: Number(det.precio_unitario || det.monto || 0),
+    }));
+
+    // 4. Invocar el bot de Playwright
+    const dniTitular = esDni ? (solUsuario && /^\d{8}$/.test(solUsuario) ? solUsuario : (ruc.startsWith('10') ? ruc.slice(2, 10) : ruc)) : undefined;
+
+    const resultado = await this.botService.emitirBoletaSol({
+      boticaId,
+      credenciales: {
+        ruc,
+        dni: dniTitular,
+        usuario: solUsuario,
+        clave: solClave,
+        modoAcceso: esDni ? 'DNI' : 'RUC',
+      },
+      receptor,
+      items,
+      observaciones: comprobante.observaciones || undefined,
+      headless: ambiente !== 'DEVELOPMENT_DEBUG',
+    });
+
+    if (!resultado.exito) {
+      return {
+        exito: false,
+        estado: EstadoComprobante.ERROR_ENVIO,
+        codigo_respuesta: resultado.codigoError || 'SOL_BOT_ERROR',
+        mensaje_respuesta: resultado.mensajeRespuesta || 'Error en automatización SUNAT SOL',
+        observaciones: {
+          screenshotBase64: resultado.screenshotBase64,
+          duracionMs: resultado.duracionMs,
+        },
+      };
+    }
+
+    // 5. Si generó PDF, almacenarlo
+    let pdfPath: string | undefined;
+    if (resultado.pdfBuffer) {
+      try {
+        const nombreCarpeta = `03-${resultado.numeroComprobante || comprobante.serie + '-' + comprobante.numero}`;
+        const dir = this.storage.directorioComprobante(
+          ruc,
+          comprobante.fecha_emision ? new Date(comprobante.fecha_emision) : new Date(),
+          nombreCarpeta,
+        );
+        pdfPath = await this.storage.guardarPdf(dir, resultado.pdfBuffer);
+      } catch (err: any) {
+        this.logger.warn(`No se pudo almacenar el PDF oficial de SUNAT SOL: ${err.message}`);
+      }
+    }
+
+    return {
+      exito: true,
+      estado: EstadoComprobante.ACEPTADO,
+      codigo_respuesta: '0',
+      mensaje_respuesta: resultado.mensajeRespuesta || 'Aceptado por SUNAT SEE-SOL',
+      ticket_sunat: resultado.numeroComprobante,
+      observaciones: {
+        numeroComprobanteSol: resultado.numeroComprobante,
+        pdfPath,
+        duracionMs: resultado.duracionMs,
+      },
+    };
+  }
+}

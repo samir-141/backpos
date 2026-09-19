@@ -24,6 +24,9 @@ import { EncryptionService } from '../../common/security/encryption.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { StorageModule } from '../storage/storage.module';
 
+import { SunatSolBotService } from './sunat-sol/sunat-sol-bot.service';
+import { SunatSolEmissionProvider } from './sunat-sol/sunat-sol-emission.provider';
+
 @Module({
   imports: [PrismaModule, StorageModule],
   controllers: [
@@ -49,12 +52,16 @@ import { StorageModule } from '../storage/storage.module';
     LocalFileStorageProvider,
     PdfGeneratorService,
     EncryptionService,
+    SunatSolBotService,
+    SunatSolEmissionProvider,
   ],
   exports: [
     FacturacionService,
     ComprobanteStorageService,
     FirmaService,
     EncryptionService,
+    SunatSolBotService,
+    SunatSolEmissionProvider,
   ],
 })
 export class FacturacionModule {}

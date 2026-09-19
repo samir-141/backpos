@@ -36,6 +36,8 @@ import type {
   configuraciones_tributarias,
 } from '../../../generated/prisma/client';
 
+import { SunatSolEmissionProvider } from '../sunat-sol/sunat-sol-emission.provider';
+
 type ComprobanteConDetalles = comprobantes_electronicos & {
   detalles: comprobantes_electronicos_detalles[];
 };
@@ -70,6 +72,7 @@ export class FacturacionService {
     private readonly correlativos: CorrelativosService,
     private readonly validation: ComprobanteValidationService,
     private readonly mapper: VentaToComprobanteMapper,
+    private readonly solEmissionProvider: SunatSolEmissionProvider,
   ) {}
 
   /**
@@ -79,15 +82,16 @@ export class FacturacionService {
   async emitir(
     dto: EmitirComprobanteDto,
     boticaId: string,
-    sucursalId: string | undefined,
-    usuarioId: string,
-  ) {
+    sucursalId?: string,
+    usuarioId?: string,
+  ): Promise<any> {
     const ctx = await this.validation.validarYObtenerContexto(
       dto,
       boticaId,
       sucursalId,
     );
 
+    // 1. Reserva atómica de correlativo + persistencia del comprobante
     const comprobante = await this.prisma.$transaction(async (tx) => {
       const reserva = await this.correlativos.reservarSiguiente(
         tx,
@@ -213,6 +217,50 @@ export class FacturacionService {
         comp.fecha_emision,
         comp.nombre_archivo,
       );
+
+      // Modalidad Automatización Playwright SEE-SOL (Nuevo RUS)
+      if (config.sistema_emision === 'SEE_SOL') {
+        this.logger.log(
+          `Iniciando emisión automatizada Playwright SEE-SOL para comprobante ${comp.serie}-${comp.correlativo}`,
+        );
+        const resultadoSol = await this.solEmissionProvider.emitir({
+          boticaId,
+          comprobante: comp as any,
+          perfilTributario: config as any,
+        });
+
+        if (resultadoSol.exito) {
+          const actualizado = await this.actualizarEstado(comp.id, {
+            estado: EstadoComprobante.ACEPTADO,
+            codigo_respuesta: '0',
+            mensaje_respuesta:
+              resultadoSol.mensaje_respuesta ||
+              'Aceptado por SUNAT SEE-SOL (Automatización Playwright)',
+            ticket_sunat: resultadoSol.ticket_sunat,
+            enviado_at: new Date(),
+            aceptado_at: new Date(),
+          });
+
+          await this.audit.registrar({
+            usuario_id: comp.created_by ?? undefined,
+            accion: 'COMPROBANTE_ACEPTADO',
+            tabla: 'comprobantes_electronicos',
+            registros_afectados: 1,
+            botica_id: boticaId,
+            observacion: `${comp.serie}-${comp.correlativo} emitido exitosamente con Playwright SEE-SOL (${resultadoSol.ticket_sunat})`,
+          });
+
+          return actualizado;
+        } else {
+          const fallido = await this.actualizarEstado(comp.id, {
+            estado: EstadoComprobante.ERROR_ENVIO,
+            codigo_respuesta: resultadoSol.codigo_respuesta || 'SOL_BOT_ERROR',
+            mensaje_respuesta: resultadoSol.mensaje_respuesta || 'Fallo en emisión SOL con Playwright',
+          });
+
+          return fallido;
+        }
+      }
 
       // Modalidad Nuevo RUS / SEE-CF / MANUAL: emisión directa sin SOAP directo
       if (

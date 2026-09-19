@@ -6,6 +6,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ScraperProductosService } from './services/scraper-productos.service';
 import { CreateCatalogoMaestroDto } from './dto/create-catalogo-maestro.dto';
 import { QueryBibliotecaDto } from './dto/query-biblioteca.dto';
 
@@ -13,7 +14,10 @@ import { QueryBibliotecaDto } from './dto/query-biblioteca.dto';
 export class BibliotecaProductosService implements OnModuleInit {
   private readonly logger = new Logger(BibliotecaProductosService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly scraperService: ScraperProductosService,
+  ) {}
 
   async onModuleInit() {
     await this.asegurarTablaEIndices();
@@ -126,7 +130,10 @@ export class BibliotecaProductosService implements OnModuleInit {
   }
 
   /**
-   * Busca un producto por código de barras exacto
+   * Busca un producto por código de barras exacto.
+   * 1. Consulta el catálogo maestro local de la biblioteca global.
+   * 2. Si no existe, consulta la API externa / scraping en tiempo real.
+   * 3. Si se encuentra en la API externa, lo guarda en el catálogo maestro para futuras consultas.
    */
   async buscarPorCodigoBarras(codigoBarras: string) {
     const cleanCode = codigoBarras.trim();
@@ -134,6 +141,7 @@ export class BibliotecaProductosService implements OnModuleInit {
       throw new NotFoundException('Código de barras no proporcionado');
     }
 
+    // 1. Búsqueda en catálogo maestro existente
     const rows: any[] = await this.prisma.$queryRawUnsafe(
       `SELECT * FROM public.catalogo_maestro_productos 
        WHERE codigo_barras = $1 AND deleted_at IS NULL 
@@ -141,11 +149,77 @@ export class BibliotecaProductosService implements OnModuleInit {
       cleanCode,
     );
 
-    if (!rows.length) {
+    if (rows.length > 0) {
+      return {
+        ...rows[0],
+        origen: 'BIBLIOTECA_GLOBAL',
+      };
+    }
+
+    // 2. Si no existe en BD global, consultar API externa / scraping inteligente
+    this.logger.log(`Producto no encontrado en catálogo maestro. Consultando API externa para: ${cleanCode}`);
+    const scrapeado = await this.scraperService.buscarEnApiExterna(cleanCode);
+
+    if (!scrapeado) {
       return null;
     }
 
-    return rows[0];
+    // 3. Guardar en catalogo_maestro_productos de forma automática para persistencia
+    try {
+      const inserted: any[] = await this.prisma.$queryRawUnsafe(
+        `INSERT INTO public.catalogo_maestro_productos (
+          codigo_barras, sku, nombre_comercial, tipo_producto,
+          principio_activo, concentracion, unidad_concentracion,
+          forma_farmaceutica, via_administracion, requiere_receta,
+          afecto_igv, laboratorio, categoria,
+          unidad_presentacion, unidad_base, cantidad_unidad_base,
+          controla_lote, requiere_vencimiento, es_verificado, foto_url
+        ) VALUES (
+          $1, $2, $3, $4,
+          $5, $6, $7,
+          $8, $9, $10,
+          $11, $12, $13,
+          $14, $15, $16,
+          $17, $18, $19, $20
+        )
+        ON CONFLICT (codigo_barras) DO UPDATE SET
+          nombre_comercial = EXCLUDED.nombre_comercial,
+          updated_at = now()
+        RETURNING *`,
+        scrapeado.codigo_barras,
+        scrapeado.sku || null,
+        scrapeado.nombre_comercial,
+        scrapeado.tipo_producto || 'MEDICAMENTO',
+        scrapeado.principio_activo || null,
+        scrapeado.concentracion || null,
+        scrapeado.unidad_concentracion || 'MG',
+        scrapeado.forma_farmaceutica || 'TABLETA',
+        scrapeado.via_administracion || 'ORAL',
+        scrapeado.requiere_receta ?? false,
+        scrapeado.afecto_igv ?? true,
+        scrapeado.laboratorio || null,
+        scrapeado.categoria || 'FARMACIA GENERAL',
+        scrapeado.unidad_presentacion || 'CAJA',
+        scrapeado.unidad_base || 'UNIDAD',
+        scrapeado.cantidad_unidad_base || 1,
+        scrapeado.controla_lote ?? true,
+        scrapeado.requiere_vencimiento ?? true,
+        false, // es_verificado = false hasta revisión
+        scrapeado.foto_url || null,
+      );
+
+      return {
+        ...inserted[0],
+        origen: 'API_EXTERNA',
+      };
+    } catch (saveErr: any) {
+      this.logger.error(`Error guardando producto scrapeado en catálogo maestro: ${saveErr.message}`);
+      return {
+        ...scrapeado,
+        id: 'external-temp',
+        origen: 'API_EXTERNA',
+      };
+    }
   }
 
   /**
@@ -381,7 +455,7 @@ export class BibliotecaProductosService implements OnModuleInit {
         }
       }
 
-      // 5. Unidades de Presentación (Empaque y Unidad Base)
+      // 5. Unidad de Presentación (Empaque)
       let unidadPresentacionId: string | null = null;
       const presNombre = (maestro.unidad_presentacion?.trim() || 'CAJA').toUpperCase();
       const presExistente: any[] = await tx.$queryRawUnsafe(
@@ -406,6 +480,31 @@ export class BibliotecaProductosService implements OnModuleInit {
         unidadPresentacionId = nuevaPres[0].id;
       }
 
+      // 6. Unidad Base (ej. TABLETA, CAPSULA, UNIDAD, etc.)
+      let unidadBaseId: string | null = null;
+      const baseNombre = (maestro.unidad_base?.trim() || 'UNIDAD').toUpperCase();
+      const baseExistente: any[] = await tx.$queryRawUnsafe(
+        `SELECT id FROM public.unidades_presentacion 
+         WHERE botica_id = $1::uuid AND LOWER(nombre) = LOWER($2) AND deleted_at IS NULL 
+         LIMIT 1`,
+        boticaId,
+        baseNombre,
+      );
+
+      if (baseExistente.length > 0) {
+        unidadBaseId = baseExistente[0].id;
+      } else {
+        const nuevaBase: any[] = await tx.$queryRawUnsafe(
+          `INSERT INTO public.unidades_presentacion (botica_id, nombre, abreviatura, created_by, updated_by)
+           VALUES ($1::uuid, $2, $3, $4::uuid, $4::uuid) RETURNING id`,
+          boticaId,
+          baseNombre,
+          baseNombre.substring(0, 3).toUpperCase(),
+          usuarioId || null,
+        );
+        unidadBaseId = nuevaBase[0].id;
+      }
+
       return {
         maestro,
         dependencias_locales: {
@@ -414,6 +513,7 @@ export class BibliotecaProductosService implements OnModuleInit {
           principio_activo_id: principioActivoId,
           forma_farmaceutica_id: formaFarmaceuticaId,
           presentacion_id: unidadPresentacionId,
+          unidad_base_id: unidadBaseId,
           cantidad_unidad_base: maestro.cantidad_unidad_base || 1,
         },
       };
