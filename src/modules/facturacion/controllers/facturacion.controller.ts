@@ -42,11 +42,13 @@ export class FacturacionController {
   @RequirePermissions('facturacion.configurar')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Probar conexión y credenciales Clave SOL en el portal SUNAT con Playwright',
+    summary:
+      'Probar conexión y credenciales Clave SOL en el portal SUNAT con Playwright',
   })
   async testConexionSol(
     @Request() req: RequestAutenticada,
-    @Body() body: {
+    @Body()
+    body: {
       headless?: boolean;
       credenciales?: {
         ruc?: string;
@@ -60,7 +62,12 @@ export class FacturacionController {
     const headless = body?.headless !== undefined ? body.headless : true;
 
     // 1. Si vienen credenciales explícitas en el body para prueba interactiva
-    if (body?.credenciales?.clave && (body?.credenciales?.dni || body?.credenciales?.usuario || body?.credenciales?.ruc)) {
+    if (
+      body?.credenciales?.clave &&
+      (body?.credenciales?.dni ||
+        body?.credenciales?.usuario ||
+        body?.credenciales?.ruc)
+    ) {
       return this.solBotService.testConexion(
         {
           ruc: body.credenciales.ruc,
@@ -102,7 +109,7 @@ export class FacturacionController {
       return this.solBotService.testConexion(
         {
           ruc: perfil.ruc,
-          dni: esDni ? (solUsuario || perfil.ruc) : undefined,
+          dni: esDni ? solUsuario || perfil.ruc : undefined,
           usuario: solUsuario,
           clave: solClave,
           modoAcceso: esDni ? 'DNI' : 'RUC',
@@ -119,7 +126,8 @@ export class FacturacionController {
     if (!config || !config.sol_clave_encriptada) {
       return {
         exito: false,
-        mensaje: 'No se han configurado el usuario/DNI y la clave SOL para esta botica',
+        mensaje:
+          'No se han configurado el usuario/DNI y la clave SOL para esta botica',
       };
     }
 
@@ -132,7 +140,7 @@ export class FacturacionController {
     return this.solBotService.testConexion(
       {
         ruc: config.ruc,
-        dni: esDni ? (solUsuario || config.ruc) : undefined,
+        dni: esDni ? solUsuario || config.ruc : undefined,
         usuario: solUsuario,
         clave: solClave,
         modoAcceso: esDni ? 'DNI' : 'RUC',
@@ -145,7 +153,8 @@ export class FacturacionController {
   @RequirePermissions('facturacion.emitir')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Emitir boleta de venta electrónica automatizada en SUNAT SEE-SOL (Nuevo RUS) con Playwright',
+    summary:
+      'Emitir boleta de venta electrónica automatizada en SUNAT SEE-SOL (Nuevo RUS) con Playwright',
   })
   async emitirBoletaSol(
     @Body() dto: SolBotEmitirBoletaDto,
@@ -155,10 +164,15 @@ export class FacturacionController {
       where: { botica_id: req.botica_id },
     });
 
-    if (!config || !config.sol_usuario_encriptado || !config.sol_clave_encriptada) {
+    if (
+      !config ||
+      !config.sol_usuario_encriptado ||
+      !config.sol_clave_encriptada
+    ) {
       return {
         exito: false,
-        mensaje: 'Faltan credenciales SOL en la configuración tributaria de la botica',
+        mensaje:
+          'Faltan credenciales SOL en la configuración tributaria de la botica',
       };
     }
 

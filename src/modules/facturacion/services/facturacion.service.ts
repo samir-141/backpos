@@ -255,7 +255,9 @@ export class FacturacionService {
           const fallido = await this.actualizarEstado(comp.id, {
             estado: EstadoComprobante.ERROR_ENVIO,
             codigo_respuesta: resultadoSol.codigo_respuesta || 'SOL_BOT_ERROR',
-            mensaje_respuesta: resultadoSol.mensaje_respuesta || 'Fallo en emisión SOL con Playwright',
+            mensaje_respuesta:
+              resultadoSol.mensaje_respuesta ||
+              'Fallo en emisión SOL con Playwright',
           });
 
           return fallido;

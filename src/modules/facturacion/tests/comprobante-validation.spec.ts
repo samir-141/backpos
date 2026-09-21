@@ -30,6 +30,7 @@ function ventaOk() {
       tipo_documento: string;
       numero_documento: string;
       nombre: string;
+      direccion?: string;
     } | null,
     detalles_ventas: [
       {
@@ -222,14 +223,28 @@ describe('ComprobanteValidationService', () => {
     ).rejects.toThrow('RUC');
   });
 
-  it('exige DNI o CE en boletas de S/ 700 o más', async () => {
+  it('exige DNI, RUC o CE en boletas de S/ 700 o más', async () => {
     const venta = ventaOk();
     venta.total = 750;
     venta.clientes = null;
     montar({ venta });
     await expect(
       service.validarYObtenerContexto(dto(), BOTICA),
-    ).rejects.toThrow('DNI o CE');
+    ).rejects.toThrow('DNI, RUC o CE');
+  });
+
+  it('permite cliente con RUC en boletas de S/ 700 o más', async () => {
+    const venta = ventaOk();
+    venta.total = 750;
+    venta.clientes = {
+      tipo_documento: 'RUC',
+      numero_documento: '20123456789',
+      nombre: 'EMPRESA CLIENTE S.A.C.',
+      direccion: 'Av. Las Palmeras 123',
+    };
+    montar({ venta });
+    const ctx = await service.validarYObtenerContexto(dto(), BOTICA);
+    expect(ctx.venta.id).toBe(venta.id);
   });
 
   it('exige ítems en la venta', async () => {

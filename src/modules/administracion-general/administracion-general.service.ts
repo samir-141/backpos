@@ -317,20 +317,23 @@ export class AdministracionGeneralService {
       // Validar y normalizar dominio
       const domainNormalized = body.dominio.trim().toLowerCase();
 
-      // Validar que el correo de la empresa termine con @dominio
+      // Validar que el correo de la empresa termine con @dominio (si fue proporcionado)
       if (
-        body.email &&
-        !body.email.toLowerCase().endsWith(`@${domainNormalized}`)
+        body.email?.trim() &&
+        !body.email.trim().toLowerCase().endsWith(`@${domainNormalized}`)
       ) {
         throw new BadRequestException(
           `El correo de la empresa debe pertenecer al dominio registrado (@${domainNormalized}).`,
         );
       }
 
-      // Validar que el correo del responsable termine con @dominio
+      // Validar que el correo del responsable termine con @dominio (si fue proporcionado)
       if (
-        body.responsable_correo &&
-        !body.responsable_correo.toLowerCase().endsWith(`@${domainNormalized}`)
+        body.responsable_correo?.trim() &&
+        !body.responsable_correo
+          .trim()
+          .toLowerCase()
+          .endsWith(`@${domainNormalized}`)
       ) {
         throw new BadRequestException(
           `El correo del responsable debe pertenecer al dominio registrado (@${domainNormalized}).`,
@@ -360,12 +363,12 @@ export class AdministracionGeneralService {
       // 1. Crear botica
       const botica = await tx.boticas.create({
         data: {
-          nombre: body.nombre,
-          razon_social: body.razon_social,
-          ruc: body.ruc,
-          direccion: body.direccion,
-          telefono: body.telefono,
-          email: body.email,
+          nombre: body.nombre.trim(),
+          razon_social: body.razon_social.trim(),
+          ruc: body.ruc.trim(),
+          direccion: body.direccion?.trim() || null,
+          telefono: body.telefono?.trim() || null,
+          email: body.email?.trim() || null,
           configuracion: { dominio: domainNormalized },
           estado: 'ACTIVO',
         },
@@ -375,9 +378,9 @@ export class AdministracionGeneralService {
       const sucursal = await tx.sucursales.create({
         data: {
           botica_id: botica.id,
-          nombre: body.sucursal_nombre,
-          direccion: body.sucursal_direccion || 'Dirección de Sucursal',
-          telefono: body.sucursal_telefono,
+          nombre: body.sucursal_nombre.trim(),
+          direccion: body.sucursal_direccion?.trim() || 'Dirección de Sucursal',
+          telefono: body.sucursal_telefono?.trim() || null,
         },
       });
 
@@ -428,14 +431,19 @@ export class AdministracionGeneralService {
         },
       });
 
-      // 6. Crear método de pago por defecto
-      await tx.metodos_pago.create({
-        data: {
-          botica_id: botica.id,
-          nombre: 'EFECTIVO',
-          requiere_referencia: false,
-        },
+      // 6. Crear método de pago por defecto (si no existe para esta botica)
+      const existeMetodo = await tx.metodos_pago.findFirst({
+        where: { botica_id: botica.id, nombre: 'EFECTIVO', deleted_at: null },
       });
+      if (!existeMetodo) {
+        await tx.metodos_pago.create({
+          data: {
+            botica_id: botica.id,
+            nombre: 'EFECTIVO',
+            requiere_referencia: false,
+          },
+        });
+      }
 
       // 6.5. Crear tipos de movimiento de inventario por defecto
       const codigoTipoIngreso = `INGRESO_${botica.id.replace(/-/g, '').slice(0, 12)}`;
@@ -464,8 +472,8 @@ export class AdministracionGeneralService {
 
       // 7. Crear usuario responsable si se especifica
       if (
-        body.responsable_nombre &&
-        body.responsable_correo &&
+        body.responsable_nombre?.trim() &&
+        body.responsable_correo?.trim() &&
         body.responsable_password
       ) {
         const hash = await bcrypt.hash(body.responsable_password, 12);
@@ -473,8 +481,8 @@ export class AdministracionGeneralService {
           data: {
             botica_id: botica.id,
             rol_id: adminRol.id,
-            nombre: body.responsable_nombre,
-            correo: body.responsable_correo,
+            nombre: body.responsable_nombre.trim(),
+            correo: body.responsable_correo.trim().toLowerCase(),
             password_hash: hash,
             estado: 'ACTIVO',
           },
@@ -547,12 +555,22 @@ export class AdministracionGeneralService {
     return this.prisma.boticas.update({
       where: { id: boticaId },
       data: {
-        nombre: body.nombre,
-        razon_social: body.razon_social,
-        ruc: body.ruc,
-        direccion: body.direccion,
-        telefono: body.telefono,
-        email: body.email,
+        nombre: body.nombre !== undefined ? body.nombre.trim() : undefined,
+        razon_social:
+          body.razon_social !== undefined
+            ? body.razon_social.trim()
+            : undefined,
+        ruc: body.ruc !== undefined ? body.ruc.trim() : undefined,
+        direccion:
+          body.direccion !== undefined
+            ? body.direccion?.trim() || null
+            : undefined,
+        telefono:
+          body.telefono !== undefined
+            ? body.telefono?.trim() || null
+            : undefined,
+        email:
+          body.email !== undefined ? body.email?.trim() || null : undefined,
         configuracion: config as any,
         estado: body.estado,
       },

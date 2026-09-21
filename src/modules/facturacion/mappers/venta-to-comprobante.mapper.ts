@@ -25,8 +25,15 @@ export class VentaToComprobanteMapper {
 
     const lineas: LineaVentaInput[] = venta.detalles_ventas.map((d) => {
       const producto = d.productos_presentaciones.productos_comerciales;
+      const pres = d.productos_presentaciones;
+      const codigoBarras =
+        pres.codigo_barras?.trim() ||
+        (producto as any).codigo_barras?.trim() ||
+        producto.sku?.trim() ||
+        producto.codigo_interno?.trim() ||
+        undefined;
       return {
-        codigoProducto: producto.codigo_interno ?? producto.sku ?? undefined,
+        codigoProducto: codigoBarras,
         descripcion: producto.nombre_comercial,
         cantidad: d.cantidad,
         precioUnitarioConIgv: Number(d.precio_unitario_presentacion),

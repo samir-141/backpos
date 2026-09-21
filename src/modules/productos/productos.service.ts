@@ -241,8 +241,10 @@ export class ProductosService {
       sku: dto.sku?.trim().toUpperCase(),
       codigo_interno: dto.codigo_interno?.trim().toUpperCase() || undefined,
       codigo_barras: dto.codigo_barras?.trim() || undefined,
-      registro_sanitario: dto.registro_sanitario?.trim().toUpperCase() || undefined,
-      via_administracion: dto.via_administracion?.trim().toUpperCase() || 'ORAL',
+      registro_sanitario:
+        dto.registro_sanitario?.trim().toUpperCase() || undefined,
+      via_administracion:
+        dto.via_administracion?.trim().toUpperCase() || 'ORAL',
       presentaciones: dto.presentaciones?.map((pres) => ({
         ...pres,
         cantidad_unidad_base: Number(pres.cantidad_unidad_base),
@@ -788,12 +790,16 @@ export class ProductosService {
       ) {
         const updateProdComercial: any = {};
         if (dto.nombre_comercial !== undefined)
-          updateProdComercial.nombre_comercial = dto.nombre_comercial?.trim().toUpperCase();
+          updateProdComercial.nombre_comercial = dto.nombre_comercial
+            ?.trim()
+            .toUpperCase();
         if (dto.registro_sanitario !== undefined)
           updateProdComercial.registro_sanitario =
             dto.registro_sanitario?.trim().toUpperCase() || null;
         if (dto.tipo_producto !== undefined)
-          updateProdComercial.tipo_producto = dto.tipo_producto?.trim().toUpperCase();
+          updateProdComercial.tipo_producto = dto.tipo_producto
+            ?.trim()
+            .toUpperCase();
         if (dto.atributos !== undefined)
           updateProdComercial.atributos = dto.atributos || null;
         if (dto.controla_lote !== undefined)

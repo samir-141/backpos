@@ -79,7 +79,9 @@ export class ScraperProductosService {
     if (!cleanCode) return null;
 
     try {
-      this.logger.log(`Consultando API externa / go-upc para código: ${cleanCode}`);
+      this.logger.log(
+        `Consultando API externa / go-upc para código: ${cleanCode}`,
+      );
       const url = `https://go-upc.com/search?q=${encodeURIComponent(cleanCode)}`;
 
       const controller = new AbortController();
@@ -99,7 +101,9 @@ export class ScraperProductosService {
       clearTimeout(timeout);
 
       if (!response.ok) {
-        this.logger.warn(`Respuesta no exitosa de go-upc (${response.status}) para ${cleanCode}`);
+        this.logger.warn(
+          `Respuesta no exitosa de go-upc (${response.status}) para ${cleanCode}`,
+        );
         return null;
       }
 
@@ -115,7 +119,10 @@ export class ScraperProductosService {
       let ean = '';
       let brand = '';
       let category = '';
-      let imageUrl = $('.product-image img').attr('src') || $('.product-cover img').attr('src') || undefined;
+      const imageUrl =
+        $('.product-image img').attr('src') ||
+        $('.product-cover img').attr('src') ||
+        undefined;
 
       $('table tr').each((_, row) => {
         const label = $(row).find('td').eq(0).text().trim();
@@ -138,7 +145,9 @@ export class ScraperProductosService {
       const concMatch = fullText.match(
         /\b(\d+(?:[.,]\d+)?)\s*(MG|G|MCG|µG|UG|ML|%|UI)\b/i,
       );
-      const concentracion = concMatch ? concMatch[1].replace(',', '.') : undefined;
+      const concentracion = concMatch
+        ? concMatch[1].replace(',', '.')
+        : undefined;
       const unidadConcentracion = concMatch ? concMatch[2].toUpperCase() : 'MG';
 
       // 2. Forma Farmacéutica
@@ -148,9 +157,17 @@ export class ScraperProductosService {
       let formaFarmaceutica = 'TABLETA';
       if (formaMatch) {
         const rawForma = formaMatch[1].toUpperCase();
-        if (rawForma.startsWith('TABLET') || rawForma.startsWith('TAB') || rawForma.startsWith('COMPRIMID')) {
+        if (
+          rawForma.startsWith('TABLET') ||
+          rawForma.startsWith('TAB') ||
+          rawForma.startsWith('COMPRIMID')
+        ) {
           formaFarmaceutica = 'TABLETA';
-        } else if (rawForma.startsWith('CAPSUL') || rawForma.startsWith('CÁPSUL') || rawForma.startsWith('GRAGEA')) {
+        } else if (
+          rawForma.startsWith('CAPSUL') ||
+          rawForma.startsWith('CÁPSUL') ||
+          rawForma.startsWith('GRAGEA')
+        ) {
           formaFarmaceutica = 'CAPSULA';
         } else if (rawForma.startsWith('JARABE')) {
           formaFarmaceutica = 'JARABE';
@@ -158,7 +175,10 @@ export class ScraperProductosService {
           formaFarmaceutica = 'SUSPENSION';
         } else if (rawForma.startsWith('SOLUC')) {
           formaFarmaceutica = 'SOLUCION';
-        } else if (rawForma.startsWith('AMPOLL') || rawForma.startsWith('INYEC')) {
+        } else if (
+          rawForma.startsWith('AMPOLL') ||
+          rawForma.startsWith('INYEC')
+        ) {
           formaFarmaceutica = 'AMPOLLA';
         } else if (rawForma.startsWith('SOBRE')) {
           formaFarmaceutica = 'SOBRE';
@@ -176,7 +196,10 @@ export class ScraperProductosService {
           formaFarmaceutica = 'LOCION';
         } else if (rawForma.startsWith('OVUL') || rawForma.startsWith('ÓVUL')) {
           formaFarmaceutica = 'OVULO';
-        } else if (rawForma.startsWith('SPRAY') || rawForma.startsWith('AEROSOL')) {
+        } else if (
+          rawForma.startsWith('SPRAY') ||
+          rawForma.startsWith('AEROSOL')
+        ) {
           formaFarmaceutica = 'SPRAY';
         } else if (rawForma.startsWith('PARCHE')) {
           formaFarmaceutica = 'PARCHE';
@@ -186,9 +209,10 @@ export class ScraperProductosService {
       }
 
       // 3. Cantidad por unidad base
-      const cantMatch = fullText.match(
-        /\b(?:X\s*|CAJA\s+CON\s+|CONTIENE\s+)?(\d+)\s*(?:TABLETAS?|TABS?|CAPSULAS?|CÁPSULAS?|UNIDADES?|AMPOLLAS?|SOBRES?|GRAGEAS?|COMPRIMIDOS?|DOSIS|PARCHES?|FRASCOS?)\b/i,
-      ) || fullText.match(/\bX\s*(\d+)\b/i);
+      const cantMatch =
+        fullText.match(
+          /\b(?:X\s*|CAJA\s+CON\s+|CONTIENE\s+)?(\d+)\s*(?:TABLETAS?|TABS?|CAPSULAS?|CÁPSULAS?|UNIDADES?|AMPOLLAS?|SOBRES?|GRAGEAS?|COMPRIMIDOS?|DOSIS|PARCHES?|FRASCOS?)\b/i,
+        ) || fullText.match(/\bX\s*(\d+)\b/i);
 
       let cantidadUnidadBase = 1;
       if (cantMatch && Number(cantMatch[1]) > 0) {
@@ -202,7 +226,11 @@ export class ScraperProductosService {
       else if (formaFarmaceutica === 'AMPOLLA') unidadBase = 'AMPOLLA';
       else if (formaFarmaceutica === 'SOBRE') unidadBase = 'SOBRE';
       else if (formaFarmaceutica === 'OVULO') unidadBase = 'OVULO';
-      else if (['JARABE', 'SUSPENSION', 'SOLUCION', 'GOTAS'].includes(formaFarmaceutica)) {
+      else if (
+        ['JARABE', 'SUSPENSION', 'SOLUCION', 'GOTAS'].includes(
+          formaFarmaceutica,
+        )
+      ) {
         unidadBase = 'FRASCO';
       } else if (['CREMA', 'GEL', 'UNGUENTO'].includes(formaFarmaceutica)) {
         unidadBase = 'TUBO';
@@ -210,9 +238,17 @@ export class ScraperProductosService {
 
       // 5. Unidad de Presentación
       let unidadPresentacion = 'CAJA';
-      if (['JARABE', 'SUSPENSION', 'SOLUCION', 'GOTAS'].includes(formaFarmaceutica) && cantidadUnidadBase <= 1) {
+      if (
+        ['JARABE', 'SUSPENSION', 'SOLUCION', 'GOTAS'].includes(
+          formaFarmaceutica,
+        ) &&
+        cantidadUnidadBase <= 1
+      ) {
         unidadPresentacion = 'FRASCO';
-      } else if (['CREMA', 'GEL', 'UNGUENTO'].includes(formaFarmaceutica) && cantidadUnidadBase <= 1) {
+      } else if (
+        ['CREMA', 'GEL', 'UNGUENTO'].includes(formaFarmaceutica) &&
+        cantidadUnidadBase <= 1
+      ) {
         unidadPresentacion = 'TUBO';
       } else if (fullText.includes('BLISTER') || fullText.includes('BLÍSTER')) {
         unidadPresentacion = 'BLISTER';
@@ -243,23 +279,69 @@ export class ScraperProductosService {
         viaAdministracion = 'RECTAL';
       } else if (formaFarmaceutica === 'SPRAY') {
         viaAdministracion = 'NASAL';
-      } else if (formaFarmaceutica === 'GOTAS' && (fullText.includes('OFTALM') || fullText.includes('OJOS'))) {
+      } else if (
+        formaFarmaceutica === 'GOTAS' &&
+        (fullText.includes('OFTALM') || fullText.includes('OJOS'))
+      ) {
         viaAdministracion = 'OFTALMICA';
-      } else if (formaFarmaceutica === 'GOTAS' && (fullText.includes('OTIC') || fullText.includes('OIDO'))) {
+      } else if (
+        formaFarmaceutica === 'GOTAS' &&
+        (fullText.includes('OTIC') || fullText.includes('OIDO'))
+      ) {
         viaAdministracion = 'OTICA';
       }
 
       // 8. Categoría Terapéutica
       let categoria = 'FARMACIA GENERAL';
-      if (principioActivo && ['PARACETAMOL', 'IBUPROFENO', 'METAMIZOL', 'NAPROXENO', 'KETOROLACO', 'TRAMADOL'].includes(principioActivo)) {
+      if (
+        principioActivo &&
+        [
+          'PARACETAMOL',
+          'IBUPROFENO',
+          'METAMIZOL',
+          'NAPROXENO',
+          'KETOROLACO',
+          'TRAMADOL',
+        ].includes(principioActivo)
+      ) {
         categoria = 'ANALGÉSICOS Y ANTIPIRÉTICOS';
-      } else if (principioActivo && ['AMOXICILINA', 'AZITROMICINA', 'CIPROFLOXACINO', 'CEFALEXINA', 'CLINDAMICINA'].includes(principioActivo)) {
+      } else if (
+        principioActivo &&
+        [
+          'AMOXICILINA',
+          'AZITROMICINA',
+          'CIPROFLOXACINO',
+          'CEFALEXINA',
+          'CLINDAMICINA',
+        ].includes(principioActivo)
+      ) {
         categoria = 'ANTIBIÓTICOS';
-      } else if (principioActivo && ['OMEPRAZOL', 'ESOMEPRAZOL', 'LANSOPRAZOL', 'RANITIDINA', 'BISMUTO'].includes(principioActivo)) {
+      } else if (
+        principioActivo &&
+        [
+          'OMEPRAZOL',
+          'ESOMEPRAZOL',
+          'LANSOPRAZOL',
+          'RANITIDINA',
+          'BISMUTO',
+        ].includes(principioActivo)
+      ) {
         categoria = 'GASTROINTESTINAL';
-      } else if (principioActivo && ['LORATADINA', 'CETIRIZINA', 'CLORFENAMINA'].includes(principioActivo)) {
+      } else if (
+        principioActivo &&
+        ['LORATADINA', 'CETIRIZINA', 'CLORFENAMINA'].includes(principioActivo)
+      ) {
         categoria = 'ANTIHISTAMÍNICOS';
-      } else if (principioActivo && ['LOSARTAN', 'ENALAPRIL', 'CAPTOPRIL', 'AMLODIPINO', 'ATORVASTATINA'].includes(principioActivo)) {
+      } else if (
+        principioActivo &&
+        [
+          'LOSARTAN',
+          'ENALAPRIL',
+          'CAPTOPRIL',
+          'AMLODIPINO',
+          'ATORVASTATINA',
+        ].includes(principioActivo)
+      ) {
         categoria = 'CARDIOVASCULAR';
       } else if (category && !category.toLowerCase().includes('folder')) {
         categoria = category.toUpperCase();
@@ -267,7 +349,10 @@ export class ScraperProductosService {
 
       // 9. Laboratorio / Marca
       let laboratorio = brand ? brand.toUpperCase() : 'GENÉRICO';
-      if (rawNombre.toUpperCase().startsWith('LABORATORIOS ') || rawNombre.toUpperCase().startsWith('LABORATORIO ')) {
+      if (
+        rawNombre.toUpperCase().startsWith('LABORATORIOS ') ||
+        rawNombre.toUpperCase().startsWith('LABORATORIO ')
+      ) {
         const matchLab = rawNombre.match(/LABORATORIOS?\s+([A-ZÁÉÍÓÚÑa-z]+)/i);
         if (matchLab) {
           laboratorio = matchLab[1].toUpperCase();
@@ -281,7 +366,8 @@ export class ScraperProductosService {
       const skuPrefix = principioActivo
         ? `MED-${principioActivo.substring(0, 3)}-${concentracion || 'GEN'}`
         : `PROD-${cleanCode.slice(-6)}`;
-      const sku = `${skuPrefix}-${cantidadUnidadBase > 1 ? cantidadUnidadBase : 'UNI'}`.toUpperCase();
+      const sku =
+        `${skuPrefix}-${cantidadUnidadBase > 1 ? cantidadUnidadBase : 'UNI'}`.toUpperCase();
 
       const resultado: ProductoScrapeado = {
         codigo_barras: cleanCode,
@@ -307,10 +393,14 @@ export class ScraperProductosService {
         foto_url: imageUrl || undefined,
       };
 
-      this.logger.log(`Producto extraído exitosamente de API externa: ${nombreComercial}`);
+      this.logger.log(
+        `Producto extraído exitosamente de API externa: ${nombreComercial}`,
+      );
       return resultado;
     } catch (err: any) {
-      this.logger.error(`Error extrayendo información externa para ${cleanCode}: ${err.message}`);
+      this.logger.error(
+        `Error extrayendo información externa para ${cleanCode}: ${err.message}`,
+      );
       return null;
     }
   }

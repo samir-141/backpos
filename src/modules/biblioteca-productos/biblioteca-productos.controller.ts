@@ -23,16 +23,15 @@ import { TenantGuard } from '../../auth/guards/tenant.guard';
 @Controller('biblioteca-productos')
 @UseGuards(TenantGuard)
 export class BibliotecaProductosController {
-  constructor(
-    private readonly bibliotecaService: BibliotecaProductosService,
-  ) {}
+  constructor(private readonly bibliotecaService: BibliotecaProductosService) {}
 
   @Get('buscar/:codigo_barras')
   @ApiOperation({
     summary: 'Buscar un producto en el catálogo maestro por código de barras',
   })
   async buscarPorCodigoBarras(@Param('codigo_barras') codigoBarras: string) {
-    const producto = await this.bibliotecaService.buscarPorCodigoBarras(codigoBarras);
+    const producto =
+      await this.bibliotecaService.buscarPorCodigoBarras(codigoBarras);
     if (!producto) {
       throw new NotFoundException(
         `Producto con código de barras ${codigoBarras} no encontrado en la biblioteca.`,
@@ -43,7 +42,8 @@ export class BibliotecaProductosController {
 
   @Get()
   @ApiOperation({
-    summary: 'Listar productos de la biblioteca global con paginación y búsqueda',
+    summary:
+      'Listar productos de la biblioteca global con paginación y búsqueda',
   })
   async findAll(@Query() query: QueryBibliotecaDto) {
     return this.bibliotecaService.findAll(query);

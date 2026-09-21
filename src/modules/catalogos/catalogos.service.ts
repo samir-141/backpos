@@ -159,7 +159,10 @@ export class CatalogosService {
     ];
 
     // Agregar campos especiales según el catálogo
-    if (config.camposEspeciales.includes('abreviatura') && abreviaturaNormalizada) {
+    if (
+      config.camposEspeciales.includes('abreviatura') &&
+      abreviaturaNormalizada
+    ) {
       campos.push('abreviatura');
       valores.push(abreviaturaNormalizada);
     }
@@ -189,7 +192,9 @@ export class CatalogosService {
 
     try {
       const rows = await this.prisma.queryRaw(query, valores);
-      this.logger.log(`✅ Creado item en ${config.tabla}: ${nombreNormalizado}`);
+      this.logger.log(
+        `✅ Creado item en ${config.tabla}: ${nombreNormalizado}`,
+      );
       return rows[0] as ICatalogoItem;
     } catch (error: any) {
       // Capturar error de índice único (PostgreSQL code 23505)
@@ -235,7 +240,9 @@ export class CatalogosService {
       dto.abreviatura !== undefined
     ) {
       campos.push(`abreviatura = $${paramIndex}`);
-      valores.push(dto.abreviatura ? dto.abreviatura.trim().toUpperCase() : null);
+      valores.push(
+        dto.abreviatura ? dto.abreviatura.trim().toUpperCase() : null,
+      );
       paramIndex++;
     }
     if (

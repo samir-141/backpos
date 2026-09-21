@@ -35,7 +35,10 @@ export class SolBotItemDto {
 }
 
 export class SolBotReceptorDto {
-  @ApiProperty({ example: '1', description: '1: DNI, 4: Carnet Extr, 0: Sin documento' })
+  @ApiProperty({
+    example: '1',
+    description: '1: DNI, 4: Carnet Extr, 0: Sin documento',
+  })
   @IsNotEmpty()
   @IsString()
   tipoDoc: string;
@@ -68,7 +71,10 @@ export class SolBotEmitirBoletaDto {
   @IsString()
   observaciones?: string;
 
-  @ApiPropertyOptional({ example: true, description: 'Ejecutar navegador en modo invisible' })
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Ejecutar navegador en modo invisible',
+  })
   @IsOptional()
   headless?: boolean;
 }

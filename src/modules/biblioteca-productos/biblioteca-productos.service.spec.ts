@@ -33,9 +33,13 @@ describe('BibliotecaProductosService', () => {
       ],
     }).compile();
 
-    service = module.get<BibliotecaProductosService>(BibliotecaProductosService);
+    service = module.get<BibliotecaProductosService>(
+      BibliotecaProductosService,
+    );
     prisma = module.get<PrismaService>(PrismaService);
-    scraperService = module.get<ScraperProductosService>(ScraperProductosService);
+    scraperService = module.get<ScraperProductosService>(
+      ScraperProductosService,
+    );
     jest.clearAllMocks();
   });
 
@@ -53,13 +57,17 @@ describe('BibliotecaProductosService', () => {
         laboratorio: 'GSK',
       };
 
-      (mockPrismaService.$queryRawUnsafe as jest.Mock).mockResolvedValue([mockProducto]);
+      (mockPrismaService.$queryRawUnsafe as jest.Mock).mockResolvedValue([
+        mockProducto,
+      ]);
 
       const result = await service.buscarPorCodigoBarras('7750123456789');
 
       expect(result).toEqual({ ...mockProducto, origen: 'BIBLIOTECA_GLOBAL' });
       expect(mockPrismaService.$queryRawUnsafe).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT * FROM public.catalogo_maestro_productos'),
+        expect.stringContaining(
+          'SELECT * FROM public.catalogo_maestro_productos',
+        ),
         '7750123456789',
       );
     });
@@ -91,7 +99,9 @@ describe('BibliotecaProductosService', () => {
 
       const result = await service.buscarPorCodigoBarras('7503004908691');
 
-      expect(mockScraperService.buscarEnApiExterna).toHaveBeenCalledWith('7503004908691');
+      expect(mockScraperService.buscarEnApiExterna).toHaveBeenCalledWith(
+        '7503004908691',
+      );
       expect(result).toEqual(
         expect.objectContaining({
           codigo_barras: '7503004908691',
@@ -121,7 +131,11 @@ describe('BibliotecaProductosService', () => {
         .mockResolvedValueOnce(mockItems)
         .mockResolvedValueOnce([{ total: 2 }]);
 
-      const result = await service.findAll({ page: 1, limit: 10, buscar: 'pan' });
+      const result = await service.findAll({
+        page: 1,
+        limit: 10,
+        buscar: 'pan',
+      });
 
       expect(result.data).toEqual(mockItems);
       expect(result.meta.total).toBe(2);

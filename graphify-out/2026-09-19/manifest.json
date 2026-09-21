@@ -5,9 +5,9 @@
     "semantic_hash": "8a70a8f23fbc691ca7a874f2000f67a2"
   },
   "jest.config.js": {
-    "mtime": 1789836179.116852,
-    "ast_hash": "d218c4218c19d8ab614bfaf5ea492d68",
-    "semantic_hash": ""
+    "mtime": 1785288043.8442643,
+    "ast_hash": "f76cce79b34226df12a4cf0ccd3eceb8",
+    "semantic_hash": "f76cce79b34226df12a4cf0ccd3eceb8"
   },
   "nest-cli.json": {
     "mtime": 1785268441.0905778,
@@ -15,8 +15,8 @@
     "semantic_hash": "f6be7db809dfe46762d818360ae4e4c5"
   },
   "package.json": {
-    "mtime": 1789835593.2289312,
-    "ast_hash": "113fdbe184b86bc8f201aaf869b87d7d",
+    "mtime": 1787279767.7828405,
+    "ast_hash": "0a587c7080352ecc282a18be93d5c04d",
     "semantic_hash": ""
   },
   "prisma.config.ts": {
@@ -540,8 +540,8 @@
     "semantic_hash": ""
   },
   "src/modules/facturacion/controllers/facturacion.controller.ts": {
-    "mtime": 1789575393.6743026,
-    "ast_hash": "0ff84cd7bb3f09b2c6645e6ddfe8186c",
+    "mtime": 1786055009.0141747,
+    "ast_hash": "b6eca2c2f1d33413c59368bd3fae2f54",
     "semantic_hash": ""
   },
   "src/modules/facturacion/controllers/resumen-diario.controller.ts": {
@@ -580,8 +580,8 @@
     "semantic_hash": ""
   },
   "src/modules/facturacion/facturacion.module.ts": {
-    "mtime": 1789402437.7712693,
-    "ast_hash": "f3d119e7488601109fdb565e64b8db78",
+    "mtime": 1788542479.6175866,
+    "ast_hash": "cc58686b7b141304ef89d7c6e5f5fb97",
     "semantic_hash": ""
   },
   "src/modules/facturacion/firma/firma.service.ts": {
@@ -615,8 +615,8 @@
     "semantic_hash": "de6b4eb9864361e9fb0d5eaafd0a8fd3"
   },
   "src/modules/facturacion/services/facturacion.service.ts": {
-    "mtime": 1789576826.7213075,
-    "ast_hash": "f6bef235f90956751346a1e226d7e5b8",
+    "mtime": 1788623938.736931,
+    "ast_hash": "7fe6b92230a4b1dbd5971d3e349ac565",
     "semantic_hash": ""
   },
   "src/modules/facturacion/services/resumen-diario.service.ts": {
@@ -1265,8 +1265,8 @@
     "semantic_hash": ""
   },
   "src/modules/perfiles-tributarios/perfiles-tributarios.service.ts": {
-    "mtime": 1789575376.8999033,
-    "ast_hash": "5a536f6c8372da8bc5c2f35b7d3fc17e",
+    "mtime": 1788623938.736931,
+    "ast_hash": "4e44d8530a75de17fbce6b6aec93b871",
     "semantic_hash": ""
   },
   "scripts/normalize-uppercase.js": {
@@ -1280,18 +1280,18 @@
     "semantic_hash": ""
   },
   "src/modules/biblioteca-productos/biblioteca-productos.module.ts": {
-    "mtime": 1789836079.4116402,
-    "ast_hash": "37fb09440fade6a27f98b7340e4db952",
+    "mtime": 1789143437.7653828,
+    "ast_hash": "7c9e2e51e7373787110e123a1b49e1b0",
     "semantic_hash": ""
   },
   "src/modules/biblioteca-productos/biblioteca-productos.service.spec.ts": {
-    "mtime": 1789836134.2110448,
-    "ast_hash": "6a2f9ef584ccacb7bbea058b562a274b",
+    "mtime": 1789143562.7251387,
+    "ast_hash": "0cb00c0861ac3d87bbc586f119f6bd4b",
     "semantic_hash": ""
   },
   "src/modules/biblioteca-productos/biblioteca-productos.service.ts": {
-    "mtime": 1789836121.5052488,
-    "ast_hash": "e10fb295e00c8bcf0d0d1a4c220773f6",
+    "mtime": 1789143914.9068146,
+    "ast_hash": "c95ceff9b7dfc68953b732e423db8c21",
     "semantic_hash": ""
   },
   "src/modules/biblioteca-productos/dto/asociar-local.dto.ts": {
@@ -1387,46 +1387,6 @@
   "src/modules/tax-engine/tax-engine.module.ts": {
     "mtime": 1788623784.6424413,
     "ast_hash": "0e42b1f7e8ebd58267a7253d9c5410b6",
-    "semantic_hash": ""
-  },
-  "barcode.js": {
-    "mtime": 1789835604.2093942,
-    "ast_hash": "a4342507d9f10b8a4a70f7c98405dff0",
-    "semantic_hash": ""
-  },
-  "src/modules/biblioteca-productos/services/scraper-productos.service.ts": {
-    "mtime": 1789836067.8961997,
-    "ast_hash": "8c3b1f504efceb8ad57038b1fa85e831",
-    "semantic_hash": ""
-  },
-  "src/modules/facturacion/dtos/sol-bot.dto.ts": {
-    "mtime": 1789402428.709413,
-    "ast_hash": "6bf733c14094d90faae026d35657b524",
-    "semantic_hash": ""
-  },
-  "src/modules/facturacion/sunat-sol/sunat-sol-bot.service.ts": {
-    "mtime": 1789579691.7371345,
-    "ast_hash": "eec2cc7896c163b79982265e9edd7d4d",
-    "semantic_hash": ""
-  },
-  "src/modules/facturacion/sunat-sol/sunat-sol-emission.provider.ts": {
-    "mtime": 1789576788.5777464,
-    "ast_hash": "47dedb2511b45c01bf907302b650c268",
-    "semantic_hash": ""
-  },
-  "src/modules/facturacion/sunat-sol/sunat-sol.interfaces.ts": {
-    "mtime": 1789575491.014282,
-    "ast_hash": "5aed940027ca7152d4e3e570705ba670",
-    "semantic_hash": ""
-  },
-  "src/modules/facturacion/tests/sunat-sol-bot.spec.ts": {
-    "mtime": 1789576888.2010846,
-    "ast_hash": "d0459171b4e4b2619cfc581680253e0b",
-    "semantic_hash": ""
-  },
-  "test-sol-live.js": {
-    "mtime": 1789579529.0552325,
-    "ast_hash": "331331375eab8a4b352672de12880cb8",
     "semantic_hash": ""
   }
 }

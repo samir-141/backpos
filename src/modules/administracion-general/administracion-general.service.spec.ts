@@ -1,7 +1,10 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AdministracionGeneralService } from './administracion-general.service';
-import { PaginationQueryDto } from './dto/administracion-general.dto';
+import {
+  CreateBoticaDto,
+  PaginationQueryDto,
+} from './dto/administracion-general.dto';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 
@@ -315,4 +318,75 @@ describe('AdministracionGeneralService paginacion y consultas acotadas', () => {
       expect(result.meta.total).toBe(cantidad);
     },
   );
+});
+
+describe('CreateBoticaDto y creación de botica con campos opcionales vacíos', () => {
+  it('transforma strings vacíos en campos opcionales a undefined y pasa validación', async () => {
+    const payload = {
+      nombre: 'Farmacia San Juan',
+      razon_social: 'SAN JUAN S.A.C.',
+      ruc: '20123456789',
+      direccion: 'Av. Central 123',
+      telefono: '',
+      email: '',
+      dominio: 'sanjuan.pe',
+      sucursal_nombre: 'Sucursal Principal',
+      sucursal_direccion: 'Av. Central 123',
+      sucursal_telefono: '',
+      responsable_nombre: '',
+      responsable_correo: '',
+      responsable_password: '',
+    };
+
+    const dto = plainToInstance(CreateBoticaDto, payload);
+    const errors = await validate(dto);
+
+    expect(errors).toHaveLength(0);
+    expect(dto.telefono).toBeUndefined();
+    expect(dto.email).toBeUndefined();
+    expect(dto.sucursal_telefono).toBeUndefined();
+    expect(dto.responsable_nombre).toBeUndefined();
+    expect(dto.responsable_correo).toBeUndefined();
+    expect(dto.responsable_password).toBeUndefined();
+  });
+
+  it('rechaza cuando el correo de empresa no tiene formato válido', async () => {
+    const payload = {
+      nombre: 'Farmacia San Juan',
+      razon_social: 'SAN JUAN S.A.C.',
+      ruc: '20123456789',
+      dominio: 'sanjuan.pe',
+      sucursal_nombre: 'Sucursal Principal',
+      email: 'no-es-correo',
+    };
+
+    const dto = plainToInstance(CreateBoticaDto, payload);
+    const errors = await validate(dto);
+
+    expect(errors.some((e) => e.property === 'email')).toBe(true);
+  });
+
+  it('rechaza en el servicio cuando el correo de empresa no coincide con el dominio', async () => {
+    const tx = {
+      boticas: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    const prisma = {
+      boticas: { findFirst: jest.fn().mockResolvedValue(null) },
+      $transaction: jest.fn((cb: (client: typeof tx) => unknown) => cb(tx)),
+    };
+    const service = serviceWith(prisma);
+
+    await expect(
+      service.crearBotica({
+        nombre: 'Farmacia San Juan',
+        razon_social: 'SAN JUAN S.A.C.',
+        ruc: '20123456789',
+        dominio: 'sanjuan.pe',
+        sucursal_nombre: 'Sucursal Principal',
+        email: 'contacto@gmail.com',
+      }),
+    ).rejects.toThrow(
+      'El correo de la empresa debe pertenecer al dominio registrado (@sanjuan.pe).',
+    );
+  });
 });

@@ -64,9 +64,13 @@ export class BibliotecaProductosService implements OnModuleInit {
         CREATE INDEX IF NOT EXISTS idx_catalogo_maestro_nombre_comercial ON public.catalogo_maestro_productos (nombre_comercial);
         CREATE INDEX IF NOT EXISTS idx_catalogo_maestro_principio_activo ON public.catalogo_maestro_productos (principio_activo);
       `);
-      this.logger.log('Tabla catalogo_maestro_productos verificada/creada exitosamente.');
+      this.logger.log(
+        'Tabla catalogo_maestro_productos verificada/creada exitosamente.',
+      );
     } catch (err: any) {
-      this.logger.error(`Error asegurando tabla catalogo_maestro_productos: ${err.message}`);
+      this.logger.error(
+        `Error asegurando tabla catalogo_maestro_productos: ${err.message}`,
+      );
     }
   }
 
@@ -123,9 +127,13 @@ export class BibliotecaProductosService implements OnModuleInit {
             registro_sanitario = UPPER(TRIM(registro_sanitario))
         WHERE deleted_at IS NULL;
       `);
-      this.logger.log('Normalización a MAYÚSCULAS de productos y catálogos ejecutada con éxito.');
+      this.logger.log(
+        'Normalización a MAYÚSCULAS de productos y catálogos ejecutada con éxito.',
+      );
     } catch (err: any) {
-      this.logger.warn(`Advertencia al normalizar registros a mayúsculas: ${err.message}`);
+      this.logger.warn(
+        `Advertencia al normalizar registros a mayúsculas: ${err.message}`,
+      );
     }
   }
 
@@ -157,7 +165,9 @@ export class BibliotecaProductosService implements OnModuleInit {
     }
 
     // 2. Si no existe en BD global, consultar API externa / scraping inteligente
-    this.logger.log(`Producto no encontrado en catálogo maestro. Consultando API externa para: ${cleanCode}`);
+    this.logger.log(
+      `Producto no encontrado en catálogo maestro. Consultando API externa para: ${cleanCode}`,
+    );
     const scrapeado = await this.scraperService.buscarEnApiExterna(cleanCode);
 
     if (!scrapeado) {
@@ -213,7 +223,9 @@ export class BibliotecaProductosService implements OnModuleInit {
         origen: 'API_EXTERNA',
       };
     } catch (saveErr: any) {
-      this.logger.error(`Error guardando producto scrapeado en catálogo maestro: ${saveErr.message}`);
+      this.logger.error(
+        `Error guardando producto scrapeado en catálogo maestro: ${saveErr.message}`,
+      );
       return {
         ...scrapeado,
         id: 'external-temp',
@@ -457,7 +469,9 @@ export class BibliotecaProductosService implements OnModuleInit {
 
       // 5. Unidad de Presentación (Empaque)
       let unidadPresentacionId: string | null = null;
-      const presNombre = (maestro.unidad_presentacion?.trim() || 'CAJA').toUpperCase();
+      const presNombre = (
+        maestro.unidad_presentacion?.trim() || 'CAJA'
+      ).toUpperCase();
       const presExistente: any[] = await tx.$queryRawUnsafe(
         `SELECT id FROM public.unidades_presentacion 
          WHERE botica_id = $1::uuid AND LOWER(nombre) = LOWER($2) AND deleted_at IS NULL 
@@ -482,7 +496,9 @@ export class BibliotecaProductosService implements OnModuleInit {
 
       // 6. Unidad Base (ej. TABLETA, CAPSULA, UNIDAD, etc.)
       let unidadBaseId: string | null = null;
-      const baseNombre = (maestro.unidad_base?.trim() || 'UNIDAD').toUpperCase();
+      const baseNombre = (
+        maestro.unidad_base?.trim() || 'UNIDAD'
+      ).toUpperCase();
       const baseExistente: any[] = await tx.$queryRawUnsafe(
         `SELECT id FROM public.unidades_presentacion 
          WHERE botica_id = $1::uuid AND LOWER(nombre) = LOWER($2) AND deleted_at IS NULL 
@@ -531,7 +547,9 @@ export class BibliotecaProductosService implements OnModuleInit {
       const total = Number(countResult[0]?.total ?? 0);
       if (total > 0) return;
 
-      this.logger.log('Precargando catálogo maestro con productos comunes en MAYÚSCULAS...');
+      this.logger.log(
+        'Precargando catálogo maestro con productos comunes en MAYÚSCULAS...',
+      );
 
       const productosSeed = [
         {
@@ -743,14 +761,16 @@ export class BibliotecaProductosService implements OnModuleInit {
           cantidad_unidad_base: 1,
           controla_lote: true,
           requiere_vencimiento: true,
-        }
+        },
       ];
 
       for (const prod of productosSeed) {
-        await this.create(prod as any);
+        await this.create(prod);
       }
 
-      this.logger.log(`Se insertaron ${productosSeed.length} productos semilla en el catálogo maestro.`);
+      this.logger.log(
+        `Se insertaron ${productosSeed.length} productos semilla en el catálogo maestro.`,
+      );
     } catch (err: any) {
       this.logger.error(`Error en seed de catálogo maestro: ${err.message}`);
     }

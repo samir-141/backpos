@@ -11,7 +11,6 @@ import { TipoDocumentoSunat } from '../sunat/catalogos.enum';
 import { motivoBloqueoEmision } from '../domain/emision-permitida.domain';
 import { SUNAT_A_TIPO_SERIE } from './correlativos.service';
 import type {
-  configuraciones_tributarias,
   series_documentos,
   ventas,
   clientes,
@@ -340,10 +339,10 @@ export class ComprobanteValidationService {
     if (
       dto.tipoComprobante === (TipoDocumentoSunat.BOLETA as string) &&
       Number(venta.total) >= 700 &&
-      !['1', '4'].includes(clienteTipoDoc)
+      !['1', '4', '6'].includes(clienteTipoDoc)
     ) {
       throw new BadRequestException(
-        'Para boletas de S/ 700.00 o más se requiere cliente con DNI o CE',
+        'Para boletas de S/ 700.00 o más se requiere cliente con DNI, RUC o CE',
       );
     }
 

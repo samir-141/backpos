@@ -17,9 +17,19 @@ import {
   MinLength,
   ValidateIf,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 
 const ESTADOS = ['ACTIVO', 'INACTIVO'] as const;
+
+const trimString = ({ value }: { value: unknown }): unknown =>
+  typeof value === 'string' ? value.trim() : value;
+
+const emptyStringToUndefined = ({ value }: { value: unknown }): unknown =>
+  typeof value === 'string' && value.trim() === ''
+    ? undefined
+    : typeof value === 'string'
+      ? value.trim()
+      : value;
 
 export class PaginationQueryDto {
   @IsOptional()
@@ -44,27 +54,33 @@ export class PaginationQueryDto {
 export class CreateBoticaDto {
   @IsString()
   @IsNotEmpty()
+  @Transform(trimString)
   nombre: string;
 
   @IsString()
   @IsNotEmpty()
+  @Transform(trimString)
   razon_social: string;
 
   @IsString()
   @Length(11, 11)
   @Matches(/^\d{11}$/)
+  @Transform(trimString)
   ruc: string;
 
   @IsOptional()
   @IsString()
+  @Transform(emptyStringToUndefined)
   direccion?: string;
 
   @IsOptional()
   @IsString()
+  @Transform(emptyStringToUndefined)
   telefono?: string;
 
   @IsOptional()
   @IsEmail()
+  @Transform(emptyStringToUndefined)
   email?: string;
 
   @IsString()
@@ -73,20 +89,25 @@ export class CreateBoticaDto {
     message:
       'El dominio de la empresa debe tener un formato válido (ej: empresa.pe)',
   })
+  @Transform(trimString)
   dominio: string;
 
   @IsString()
   @IsNotEmpty()
+  @Transform(trimString)
   sucursal_nombre: string;
 
   @IsOptional()
   @IsString()
+  @Transform(emptyStringToUndefined)
   sucursal_direccion?: string;
 
   @IsOptional()
   @IsString()
+  @Transform(emptyStringToUndefined)
   sucursal_telefono?: string;
 
+  @Transform(emptyStringToUndefined)
   @ValidateIf((o: CreateBoticaDto) =>
     Boolean(
       o.responsable_nombre || o.responsable_correo || o.responsable_password,
@@ -96,6 +117,7 @@ export class CreateBoticaDto {
   @IsNotEmpty()
   responsable_nombre?: string;
 
+  @Transform(emptyStringToUndefined)
   @ValidateIf((o: CreateBoticaDto) =>
     Boolean(
       o.responsable_nombre || o.responsable_correo || o.responsable_password,
@@ -104,6 +126,7 @@ export class CreateBoticaDto {
   @IsEmail()
   responsable_correo?: string;
 
+  @Transform(emptyStringToUndefined)
   @ValidateIf((o: CreateBoticaDto) =>
     Boolean(
       o.responsable_nombre || o.responsable_correo || o.responsable_password,
@@ -118,29 +141,35 @@ export class UpdateBoticaDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @Transform(emptyStringToUndefined)
   nombre?: string;
 
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @Transform(emptyStringToUndefined)
   razon_social?: string;
 
   @IsOptional()
   @IsString()
   @Length(11, 11)
   @Matches(/^\d{11}$/)
+  @Transform(emptyStringToUndefined)
   ruc?: string;
 
   @IsOptional()
   @IsString()
+  @Transform(emptyStringToUndefined)
   direccion?: string;
 
   @IsOptional()
   @IsString()
+  @Transform(emptyStringToUndefined)
   telefono?: string;
 
   @IsOptional()
   @IsEmail()
+  @Transform(emptyStringToUndefined)
   email?: string;
 
   @IsOptional()
@@ -150,6 +179,7 @@ export class UpdateBoticaDto {
     message:
       'El dominio de la empresa debe tener un formato válido (ej: empresa.pe)',
   })
+  @Transform(emptyStringToUndefined)
   dominio?: string;
 
   @IsOptional()
@@ -160,14 +190,17 @@ export class UpdateBoticaDto {
 export class CreateSucursalDto {
   @IsString()
   @IsNotEmpty()
+  @Transform(trimString)
   nombre: string;
 
   @IsString()
   @IsNotEmpty()
+  @Transform(trimString)
   direccion: string;
 
   @IsOptional()
   @IsString()
+  @Transform(emptyStringToUndefined)
   telefono?: string;
 }
 
@@ -175,14 +208,17 @@ export class UpdateSucursalDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @Transform(emptyStringToUndefined)
   nombre?: string;
 
   @IsOptional()
   @IsString()
+  @Transform(emptyStringToUndefined)
   direccion?: string;
 
   @IsOptional()
   @IsString()
+  @Transform(emptyStringToUndefined)
   telefono?: string;
 }
 
@@ -216,15 +252,18 @@ export class UpdateColaboradorDto {
   @IsOptional()
   @IsString()
   @IsNotEmpty()
+  @Transform(emptyStringToUndefined)
   nombre?: string;
 
   @IsOptional()
   @IsEmail()
+  @Transform(emptyStringToUndefined)
   correo?: string;
 
   @IsOptional()
   @IsString()
   @MinLength(6)
+  @Transform(emptyStringToUndefined)
   password?: string;
 
   @IsOptional()
