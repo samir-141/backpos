@@ -19,6 +19,69 @@ export class SunatSolBotService {
   private readonly SUNAT_LOGIN_FALLBACK =
     'https://api-seguridad.sunat.gob.pe/v1/clientessol/4f3b88b3-d9d6-402a-b85d-6a0bc857746a/oauth2/loginMenuSol?lang=es-PE&showDni=true&showLanguages=false&originalUrl=https://e-menu.sunat.gob.pe/cl-ti-itmenu/AutenticaMenuInternet.htm&state=rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAUH2sHDFmDRAwACRgAKbG9hZEZhY3RvckkACXRocmVzaG9sZHhwP0AAAAAAAAx3CAAAABAAAAADdAADZXhlcHQABnBhcmFtc3QASyomKiYvY2wtdGktaXRtZW51L01lbnVJbnRlcm5ldC5odG0mYjY0ZDI2YThiNWFmMDkxOTIzYjIzYjY0MDdhMWMxZGI0MWU3MzNhNnQABGV4ZWNweA==';
 
+  /** Mutex para garantizar que nunca corran 2 navegadores Playwright simultáneamente en entornos limitados de RAM (ej. Render 512MB) */
+  private colaEjecucion: Promise<unknown> = Promise.resolve();
+
+  private async ejecutarConBloqueo<T>(fn: () => Promise<T>): Promise<T> {
+    const ticket = (async () => {
+      try {
+        await this.colaEjecucion;
+      } catch {
+        // Ignorar error de la ejecución anterior en cola
+      }
+      return await fn();
+    })();
+
+    this.colaEjecucion = ticket.catch(() => {});
+    return await ticket;
+  }
+
+  /**
+   * Configura interceptación de red para abortar recursos no esenciales
+   * (fuentes, audio/video, trackers) ahorrando memoria RAM y acelerando la navegación.
+   */
+  private async configurarRutasOptimizadas(page: Page): Promise<void> {
+    try {
+      await page.route('**/*', (route) => {
+        const req = route.request();
+        const resourceType = req.resourceType();
+        const url = req.url().toLowerCase();
+
+        // 1. Bloquear multimedia y fuentes que consumen buffers de GPU y memoria innecesaria
+        if (resourceType === 'media' || resourceType === 'font') {
+          return route.abort().catch(() => {});
+        }
+
+        // 2. Bloquear rastreadores y analíticas externas que SUNAT a veces carga
+        if (
+          url.includes('google-analytics') ||
+          url.includes('googletagmanager') ||
+          url.includes('doubleclick') ||
+          url.includes('facebook') ||
+          url.includes('hotjar') ||
+          url.includes('/banner')
+        ) {
+          return route.abort().catch(() => {});
+        }
+
+        // 3. Opcional: bloqueo de imágenes si se activa por variable de entorno
+        if (
+          process.env.SUNAT_SOL_BLOCK_IMAGES === 'true' &&
+          resourceType === 'image'
+        ) {
+          return route.abort().catch(() => {});
+        }
+
+        return route.continue().catch(() => {});
+      });
+    } catch (err: unknown) {
+      const errText = err instanceof Error ? err.message : String(err);
+      this.logger.debug(
+        `No se pudo inicializar interceptor de rutas: ${errText}`,
+      );
+    }
+  }
+
   /**
    * Prueba de conexión y autenticación con Clave SOL en el portal SUNAT.
    */
@@ -26,66 +89,82 @@ export class SunatSolBotService {
     credenciales: SunatSolCredenciales,
     headless = true,
   ): Promise<TestConexionSolResult> {
-    const startTime = Date.now();
-    let browser: Browser | null = null;
-    let context: BrowserContext | null = null;
+    return this.ejecutarConBloqueo(async () => {
+      const startTime = Date.now();
+      let browser: Browser | null = null;
+      let context: BrowserContext | null = null;
+      let page: Page | null = null;
 
-    try {
-      this.logger.log(
-        `Iniciando prueba de conexión SOL para RUC: ${credenciales.ruc}`,
-      );
-      browser = await this.lanzarNavegador(headless);
-      context = await browser.newContext({
-        viewport: { width: 1366, height: 768 },
-        userAgent:
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      });
-
-      const page = await context.newPage();
-      await this.ejecutarLogin(page, credenciales);
-
-      // Si llegamos aquí, el login fue exitoso. Extraemos la razón social o título visible si está disponible.
-      let razonSocial = '';
       try {
-        const headerText = await page.textContent('body');
-        if (headerText) {
-          const match = headerText.match(/Bienvenido:?\s*([A-Z0-9\s.,-]+)/i);
-          if (match && match[1]) {
-            razonSocial = match[1].trim().slice(0, 100);
+        this.logger.log(
+          `Iniciando prueba de conexión SOL para RUC: ${credenciales.ruc}`,
+        );
+        browser = await this.lanzarNavegador(headless);
+        context = await browser.newContext({
+          viewport: { width: 1366, height: 768 },
+          userAgent:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        });
+
+        page = await context.newPage();
+        await this.configurarRutasOptimizadas(page);
+        await this.ejecutarLogin(page, credenciales);
+
+        // Si llegamos aquí, el login fue exitoso. Extraemos la razón social o título visible si está disponible.
+        let razonSocial = '';
+        try {
+          const headerText = await page.textContent('body');
+          if (headerText) {
+            const match = headerText.match(/Bienvenido:?\s*([A-Z0-9\s.,-]+)/i);
+            if (match && match[1]) {
+              razonSocial = match[1].trim().slice(0, 100);
+            }
+          }
+        } catch {
+          // Ignorar si no se pudo parsear el nombre
+        }
+
+        const screenshot = await page.screenshot({ fullPage: false });
+        return {
+          exito: true,
+          ruc: credenciales.ruc,
+          dni: credenciales.dni,
+          usuario: credenciales.usuario,
+          razonSocialDetectada: razonSocial || undefined,
+          mensaje: `Conexión exitosa a SUNAT SOL (${Date.now() - startTime}ms)`,
+          capturaBase64: screenshot.toString('base64'),
+        };
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        const errorStack = err instanceof Error ? err.stack : undefined;
+        this.logger.error(
+          `Error al conectar con SUNAT SOL: ${errorMsg}`,
+          errorStack,
+        );
+        return {
+          exito: false,
+          ruc: credenciales.ruc,
+          dni: credenciales.dni,
+          usuario: credenciales.usuario,
+          mensaje: `Fallo de autenticación en SUNAT SOL: ${errorMsg}`,
+        };
+      } finally {
+        if (page) await page.close().catch(() => {});
+        if (context) await context.close().catch(() => {});
+        if (browser) await browser.close().catch(() => {});
+        page = null;
+        context = null;
+        browser = null;
+        if (typeof global.gc === 'function') {
+          try {
+            global.gc();
+          } catch (gcErr: unknown) {
+            const msg = gcErr instanceof Error ? gcErr.message : String(gcErr);
+            this.logger.debug(`Error al invocar GC: ${msg}`);
           }
         }
-      } catch {
-        // Ignorar si no se pudo parsear el nombre
       }
-
-      const screenshot = await page.screenshot({ fullPage: false });
-      return {
-        exito: true,
-        ruc: credenciales.ruc,
-        dni: credenciales.dni,
-        usuario: credenciales.usuario,
-        razonSocialDetectada: razonSocial || undefined,
-        mensaje: `Conexión exitosa a SUNAT SOL (${Date.now() - startTime}ms)`,
-        capturaBase64: screenshot.toString('base64'),
-      };
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      const errorStack = err instanceof Error ? err.stack : undefined;
-      this.logger.error(
-        `Error al conectar con SUNAT SOL: ${errorMsg}`,
-        errorStack,
-      );
-      return {
-        exito: false,
-        ruc: credenciales.ruc,
-        dni: credenciales.dni,
-        usuario: credenciales.usuario,
-        mensaje: `Fallo de autenticación en SUNAT SOL: ${errorMsg}`,
-      };
-    } finally {
-      if (context) await context.close().catch(() => {});
-      if (browser) await browser.close().catch(() => {});
-    }
+    });
   }
 
   /**
@@ -94,204 +173,230 @@ export class SunatSolBotService {
   async emitirBoletaSol(
     params: EmitirBoletaSolParams,
   ): Promise<ResultadoBoletaSol> {
-    const startTime = Date.now();
-    const timeout = params.timeoutMs || 90000;
-    const envHeadless = process.env.SUNAT_SOL_HEADLESS;
-    const isHeadless =
-      envHeadless !== undefined
-        ? envHeadless !== 'false'
-        : params.headless !== undefined
-          ? params.headless
-          : true;
+    return this.ejecutarConBloqueo(async () => {
+      const startTime = Date.now();
+      const timeout = params.timeoutMs || 90000;
+      const envHeadless = process.env.SUNAT_SOL_HEADLESS;
+      const isHeadless =
+        envHeadless !== undefined
+          ? envHeadless !== 'false'
+          : params.headless !== undefined
+            ? params.headless
+            : true;
 
-    let browser: Browser | null = null;
-    let context: BrowserContext | null = null;
-    let page: Page | null = null;
+      let browser: Browser | null = null;
+      let context: BrowserContext | null = null;
+      let page: Page | null = null;
 
-    this.logger.log(
-      `Iniciando emisión automatizada de Boleta SOL para RUC: ${params.credenciales.ruc}, Items: ${params.items.length}`,
-    );
-
-    try {
-      browser = await this.lanzarNavegador(isHeadless);
-      context = await browser.newContext({
-        viewport: { width: 1366, height: 768 },
-        acceptDownloads: true,
-        userAgent:
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      });
-
-      page = await context.newPage();
-      page.setDefaultTimeout(timeout);
-
-      // Auto-aceptar diálogos nativos del navegador de SUNAT (ej. confirmación de emisión sin documento)
-      page.on('dialog', async (dialog) => {
-        this.logger.log(
-          `[SUNAT Dialog detectado]: "${dialog.message()}" (${dialog.type()}) -> Aceptando automáticamente`,
-        );
-        await dialog.accept().catch(() => {});
-      });
-
-      params.onProgreso?.({
-        paso: 1,
-        totalPasos: 7,
-        etapa: 'INICIO',
-        titulo: 'Conectando con SUNAT',
-        descripcion: 'Estableciendo conexión segura con el portal SOL...',
-        porcentaje: 10,
-      });
-
-      // 1. Autenticación SOL
-      params.onProgreso?.({
-        paso: 2,
-        totalPasos: 7,
-        etapa: 'LOGIN',
-        titulo: 'Autenticando Credenciales SOL',
-        descripcion: 'Validando acceso con RUC/DNI y clave en el sistema...',
-        porcentaje: 25,
-      });
-      await this.ejecutarLogin(page, params.credenciales);
-      await this.cerrarModalesAviso(page);
-
-      // 2. Navegación a Emisión de Boleta o Factura Electrónica
-      params.onProgreso?.({
-        paso: 3,
-        totalPasos: 7,
-        etapa: 'NAVEGACION',
-        titulo: 'Accediendo a SEE - SOL',
-        descripcion: 'Cargando el formulario oficial de comprobantes...',
-        porcentaje: 40,
-      });
-      await this.navegarAEmision(page, params.tipoComprobante || 'BOLETA');
-      await this.cerrarModalesAviso(page);
-
-      // 3. Paso 1: Datos del Receptor y Moneda
-      params.onProgreso?.({
-        paso: 4,
-        totalPasos: 7,
-        etapa: 'RECEPTOR',
-        titulo: 'Registrando Datos del Cliente',
-        descripcion: 'Configurando receptor, tipo de documento y moneda...',
-        porcentaje: 55,
-      });
-      await this.llenarPasoReceptor(page, params);
-
-      // 4. Paso 2: Adición de Ítems (Bienes o Servicios)
-      params.onProgreso?.({
-        paso: 5,
-        totalPasos: 7,
-        etapa: 'ITEMS',
-        titulo: 'Adicionando Productos y Precios',
-        descripcion: `Registrando ${params.items.length} ítem(s), cantidades y valor unitario...`,
-        porcentaje: 75,
-      });
-      await this.llenarPasoItems(page, params);
-
-      // 5. Paso 3: Observaciones y Adicionales
-      await this.llenarPasoObservaciones(page, params);
-
-      // 6. Paso 4: Preliminar y Confirmación de Emisión
-      params.onProgreso?.({
-        paso: 6,
-        totalPasos: 7,
-        etapa: 'PRELIMINAR',
-        titulo: 'Verificando Comprobante Preliminar',
-        descripcion: 'Validando montos tributarios y confirmando la emisión...',
-        porcentaje: 90,
-      });
-      const resultadoEmision = await this.confirmarYEmitirBoleta(page);
-
-      // 7. Descarga o generación de PDF
-      const pdfBuffer =
-        resultadoEmision.pdfBuffer ||
-        (await this.obtenerPdfComprobante(
-          page,
-          resultadoEmision.numeroComprobante,
-        ));
-
-      params.onProgreso?.({
-        paso: 7,
-        totalPasos: 7,
-        etapa: 'EMITIDO',
-        titulo: 'Comprobante Emitido con Éxito',
-        descripcion: `Comprobante ${resultadoEmision.numeroComprobante} generado y aceptado por SUNAT`,
-        porcentaje: 100,
-      });
-
-      const duracionMs = Date.now() - startTime;
       this.logger.log(
-        `Boleta SOL emitida con éxito: ${resultadoEmision.numeroComprobante} en ${duracionMs}ms`,
+        `Iniciando emisión automatizada de Boleta SOL para RUC: ${params.credenciales.ruc}, Items: ${params.items.length}`,
       );
 
-      return {
-        exito: true,
-        numeroComprobante: resultadoEmision.numeroComprobante,
-        serie: resultadoEmision.serie,
-        correlativo: resultadoEmision.correlativo,
-        fechaEmision: new Date().toISOString(),
-        pdfBuffer,
-        pdfBase64: pdfBuffer ? pdfBuffer.toString('base64') : undefined,
-        mensajeRespuesta:
-          'Boleta de Venta Electrónica emitida exitosamente en SUNAT SEE-SOL',
-        duracionMs,
-      };
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      const errorStack = err instanceof Error ? err.stack : undefined;
-      this.logger.error(
-        `Error en emisión de Boleta SOL: ${errorMsg}`,
-        errorStack,
-      );
-      let screenshotBase64: string | undefined;
-      if (page) {
-        try {
-          const buffer = await page.screenshot({ fullPage: true });
-          screenshotBase64 = buffer.toString('base64');
+      try {
+        browser = await this.lanzarNavegador(isHeadless);
+        context = await browser.newContext({
+          viewport: { width: 1366, height: 768 },
+          acceptDownloads: true,
+          userAgent:
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        });
 
-          // Guardar captura física en disco para inspección visual directa
-          const logsDir = path.join(
-            process.cwd(),
-            'logs',
-            'sunat-sol-screenshots',
+        page = await context.newPage();
+        page.setDefaultTimeout(timeout);
+        await this.configurarRutasOptimizadas(page);
+
+        // Auto-aceptar diálogos nativos del navegador de SUNAT (ej. confirmación de emisión sin documento)
+        page.on('dialog', async (dialog) => {
+          this.logger.log(
+            `[SUNAT Dialog detectado]: "${dialog.message()}" (${dialog.type()}) -> Aceptando automáticamente`,
           );
-          if (!fs.existsSync(logsDir)) {
-            fs.mkdirSync(logsDir, { recursive: true });
+          await dialog.accept().catch(() => {});
+        });
+
+        params.onProgreso?.({
+          paso: 1,
+          totalPasos: 7,
+          etapa: 'INICIO',
+          titulo: 'Conectando con SUNAT',
+          descripcion: 'Estableciendo conexión segura con el portal SOL...',
+          porcentaje: 10,
+        });
+
+        // 1. Autenticación SOL
+        params.onProgreso?.({
+          paso: 2,
+          totalPasos: 7,
+          etapa: 'LOGIN',
+          titulo: 'Autenticando Credenciales SOL',
+          descripcion: 'Validando acceso con RUC/DNI y clave en el sistema...',
+          porcentaje: 25,
+        });
+        await this.ejecutarLogin(page, params.credenciales);
+        await this.cerrarModalesAviso(page);
+
+        // 2. Navegación a Emisión de Boleta o Factura Electrónica
+        params.onProgreso?.({
+          paso: 3,
+          totalPasos: 7,
+          etapa: 'NAVEGACION',
+          titulo: 'Accediendo a SEE - SOL',
+          descripcion: 'Cargando el formulario oficial de comprobantes...',
+          porcentaje: 40,
+        });
+        await this.navegarAEmision(page, params.tipoComprobante || 'BOLETA');
+        await this.cerrarModalesAviso(page);
+
+        // 3. Paso 1: Datos del Receptor y Moneda
+        params.onProgreso?.({
+          paso: 4,
+          totalPasos: 7,
+          etapa: 'RECEPTOR',
+          titulo: 'Registrando Datos del Cliente',
+          descripcion: 'Configurando receptor, tipo de documento y moneda...',
+          porcentaje: 55,
+        });
+        await this.llenarPasoReceptor(page, params);
+
+        // 4. Paso 2: Adición de Ítems (Bienes o Servicios)
+        params.onProgreso?.({
+          paso: 5,
+          totalPasos: 7,
+          etapa: 'ITEMS',
+          titulo: 'Adicionando Productos y Precios',
+          descripcion: `Registrando ${params.items.length} ítem(s), cantidades y valor unitario...`,
+          porcentaje: 75,
+        });
+        await this.llenarPasoItems(page, params);
+
+        // 5. Paso 3: Observaciones y Adicionales
+        await this.llenarPasoObservaciones(page, params);
+
+        // 6. Paso 4: Preliminar y Confirmación de Emisión
+        params.onProgreso?.({
+          paso: 6,
+          totalPasos: 7,
+          etapa: 'PRELIMINAR',
+          titulo: 'Verificando Comprobante Preliminar',
+          descripcion:
+            'Validando montos tributarios y confirmando la emisión...',
+          porcentaje: 90,
+        });
+        const resultadoEmision = await this.confirmarYEmitirBoleta(page);
+
+        // 7. Descarga o generación de PDF
+        const pdfBuffer =
+          resultadoEmision.pdfBuffer ||
+          (await this.obtenerPdfComprobante(
+            page,
+            resultadoEmision.numeroComprobante,
+          ));
+
+        params.onProgreso?.({
+          paso: 7,
+          totalPasos: 7,
+          etapa: 'EMITIDO',
+          titulo: 'Comprobante Emitido con Éxito',
+          descripcion: `Comprobante ${resultadoEmision.numeroComprobante} generado y aceptado por SUNAT`,
+          porcentaje: 100,
+        });
+
+        const duracionMs = Date.now() - startTime;
+        this.logger.log(
+          `Boleta SOL emitida con éxito: ${resultadoEmision.numeroComprobante} en ${duracionMs}ms`,
+        );
+
+        return {
+          exito: true,
+          numeroComprobante: resultadoEmision.numeroComprobante,
+          serie: resultadoEmision.serie,
+          correlativo: resultadoEmision.correlativo,
+          fechaEmision: new Date().toISOString(),
+          pdfBuffer,
+          pdfBase64: pdfBuffer ? pdfBuffer.toString('base64') : undefined,
+          mensajeRespuesta:
+            'Boleta de Venta Electrónica emitida exitosamente en SUNAT SEE-SOL',
+          duracionMs,
+        };
+      } catch (err: unknown) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        const errorStack = err instanceof Error ? err.stack : undefined;
+        this.logger.error(
+          `Error en emisión de Boleta SOL: ${errorMsg}`,
+          errorStack,
+        );
+        let screenshotBase64: string | undefined;
+        if (page) {
+          try {
+            const buffer = await page.screenshot({ fullPage: true });
+            screenshotBase64 = buffer.toString('base64');
+
+            // Guardar captura física en disco para inspección visual directa
+            const logsDir = path.join(
+              process.cwd(),
+              'logs',
+              'sunat-sol-screenshots',
+            );
+            if (!fs.existsSync(logsDir)) {
+              fs.mkdirSync(logsDir, { recursive: true });
+            }
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const screenshotPath = path.join(logsDir, `error-${timestamp}.png`);
+            fs.writeFileSync(screenshotPath, buffer);
+            this.logger.error(
+              `[DIAGNÓSTICO VISUAL] Captura de error guardada en: ${screenshotPath}`,
+            );
+
+            const htmlPath = path.join(logsDir, `error-${timestamp}.html`);
+            const htmlContent = await page.content();
+            fs.writeFileSync(htmlPath, htmlContent, 'utf-8');
+            this.logger.error(
+              `[DIAGNÓSTICO VISUAL] Volcado HTML de la pantalla guardado en: ${htmlPath}`,
+            );
+          } catch {
+            // Ignorar fallo al tomar captura
           }
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-          const screenshotPath = path.join(logsDir, `error-${timestamp}.png`);
-          fs.writeFileSync(screenshotPath, buffer);
-          this.logger.error(
-            `[DIAGNÓSTICO VISUAL] Captura de error guardada en: ${screenshotPath}`,
-          );
+        }
 
-          const htmlPath = path.join(logsDir, `error-${timestamp}.html`);
-          const htmlContent = await page.content();
-          fs.writeFileSync(htmlPath, htmlContent, 'utf-8');
-          this.logger.error(
-            `[DIAGNÓSTICO VISUAL] Volcado HTML de la pantalla guardado en: ${htmlPath}`,
-          );
-        } catch {
-          // Ignorar fallo al tomar captura
+        return {
+          exito: false,
+          codigoError: 'SOL_AUTOMATION_ERROR',
+          mensajeRespuesta: `Error al emitir en SUNAT SOL: ${errorMsg}`,
+          screenshotBase64,
+          duracionMs: Date.now() - startTime,
+        };
+      } finally {
+        if (page) await page.close().catch(() => {});
+        if (context) await context.close().catch(() => {});
+        if (browser) await browser.close().catch(() => {});
+        page = null;
+        context = null;
+        browser = null;
+        if (typeof global.gc === 'function') {
+          try {
+            global.gc();
+          } catch (gcErr: unknown) {
+            const msg = gcErr instanceof Error ? gcErr.message : String(gcErr);
+            this.logger.debug(`Error al invocar GC: ${msg}`);
+          }
         }
       }
-
-      return {
-        exito: false,
-        codigoError: 'SOL_AUTOMATION_ERROR',
-        mensajeRespuesta: `Error al emitir en SUNAT SOL: ${errorMsg}`,
-        screenshotBase64,
-        duracionMs: Date.now() - startTime,
-      };
-    } finally {
-      if (context) await context.close().catch(() => {});
-      if (browser) await browser.close().catch(() => {});
-    }
+    });
   }
 
   /**
-   * Inicializa la instancia del navegador con flags optimizados y sin slowMo artificial.
+   * Inicializa la instancia del navegador con flags ultra optimizados para bajo consumo de memoria RAM.
    */
   private async lanzarNavegador(headless: boolean): Promise<Browser> {
+    // Si se proporciona endpoint remoto (ej. Browserless.io o contenedor dedicado), conectarse vía WebSocket
+    const wsUrl =
+      process.env.PLAYWRIGHT_WS_ENDPOINT || process.env.BROWSERLESS_URL;
+    if (wsUrl) {
+      this.logger.log(
+        `[Playwright] Conectando a instancia remota de Chromium vía WebSocket: ${wsUrl}`,
+      );
+      return await chromium.connect(wsUrl);
+    }
+
     const slowMo = process.env.SUNAT_SOL_SLOWMO
       ? parseInt(process.env.SUNAT_SOL_SLOWMO, 10)
       : 0;
@@ -304,74 +409,112 @@ export class SunatSolBotService {
     if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
       executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
     } else {
+      // 1. Intentar localizar chrome-headless-shell en node_modules (ocupa significativamente menos RAM)
       try {
-        const defaultPath = chromium.executablePath();
-        if (fs.existsSync(defaultPath)) {
-          executablePath = defaultPath;
+        const localBrowsersDir = path.join(
+          process.cwd(),
+          'node_modules',
+          'playwright-core',
+          '.local-browsers',
+        );
+        if (fs.existsSync(localBrowsersDir)) {
+          const findExecutable = (
+            dir: string,
+          ): { shell: string | null; standard: string | null } => {
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            const result: { shell: string | null; standard: string | null } = {
+              shell: null,
+              standard: null,
+            };
+            for (const entry of entries) {
+              const fullPath = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                const sub = findExecutable(fullPath);
+                if (sub.shell) result.shell = sub.shell;
+                if (sub.standard) result.standard = sub.standard;
+              } else if (entry.name === 'chrome-headless-shell') {
+                result.shell = fullPath;
+              } else if (
+                entry.name === 'chrome' ||
+                entry.name === 'chrome.exe' ||
+                entry.name === 'chromium'
+              ) {
+                result.standard = fullPath;
+              }
+            }
+            return result;
+          };
+
+          const found = findExecutable(localBrowsersDir);
+          if (found.shell && headless) {
+            executablePath = found.shell;
+            this.logger.log(
+              `[Playwright] Usando ejecutable ultra-ligero chrome-headless-shell: ${executablePath}`,
+            );
+          } else if (found.standard) {
+            executablePath = found.standard;
+            this.logger.log(
+              `[Playwright] Usando ejecutable de Chromium en node_modules: ${executablePath}`,
+            );
+          }
         }
-      } catch {
-        // Ignorar si defaultPath no está disponible en este entorno
+      } catch (e: unknown) {
+        const errText = e instanceof Error ? e.message : String(e);
+        this.logger.debug(
+          `Error al buscar Chromium en node_modules: ${errText}`,
+        );
       }
 
       if (!executablePath) {
         try {
-          const localBrowsersDir = path.join(
-            process.cwd(),
-            'node_modules',
-            'playwright-core',
-            '.local-browsers',
-          );
-          if (fs.existsSync(localBrowsersDir)) {
-            const findExecutable = (dir: string): string | null => {
-              const entries = fs.readdirSync(dir, { withFileTypes: true });
-              for (const entry of entries) {
-                const fullPath = path.join(dir, entry.name);
-                if (entry.isDirectory()) {
-                  const res = findExecutable(fullPath);
-                  if (res) return res;
-                } else if (
-                  entry.name === 'chrome-headless-shell' ||
-                  entry.name === 'chrome' ||
-                  entry.name === 'chrome.exe' ||
-                  entry.name === 'chromium'
-                ) {
-                  return fullPath;
-                }
-              }
-              return null;
-            };
-            const found = findExecutable(localBrowsersDir);
-            if (found) {
-              executablePath = found;
-              this.logger.log(
-                `[Playwright] Ejecutable de Chromium localizado en node_modules: ${executablePath}`,
-              );
-            }
+          const defaultPath = chromium.executablePath();
+          if (fs.existsSync(defaultPath)) {
+            executablePath = defaultPath;
           }
-        } catch (e: unknown) {
-          const errText = e instanceof Error ? e.message : String(e);
-          this.logger.debug(
-            `Error al buscar Chromium en node_modules: ${errText}`,
-          );
+        } catch {
+          // Ignorar si defaultPath no está disponible en este entorno
         }
       }
     }
+
+    const lowMemoryArgs = [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--no-first-run',
+      '--no-zygote',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      // CRÍTICO para Render (512MB RAM):
+      // Evita que los iframes de SUNAT (iframeApplication) creen procesos de renderizado separados (ahorra 80MB-120MB de RAM)
+      '--disable-features=site-per-process,AudioServiceOutOfProcess,IsolateOrigins',
+      // Limitar a máximo 1 proceso de renderizado
+      '--renderer-process-limit=1',
+      // Limitar heap interno de JavaScript de Chromium a 128MB
+      '--js-flags=--max-old-space-size=128',
+      // Desactivar utilidades y componentes en segundo plano
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-breakpad',
+      '--disable-component-update',
+      '--disable-default-apps',
+      '--disable-domain-reliability',
+      '--disable-ipc-flooding-protection',
+      '--disable-renderer-backgrounding',
+      '--mute-audio',
+      '--no-default-browser-check',
+      '--password-store=basic',
+      '--use-mock-keychain',
+    ];
 
     return await chromium.launch({
       headless,
       slowMo,
       executablePath,
-      args: headless
-        ? [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--disable-gpu',
-          ]
-        : ['--start-maximized'],
+      args: headless ? lowMemoryArgs : ['--start-maximized'],
     });
   }
 
@@ -1204,8 +1347,8 @@ export class SunatSolBotService {
         for (const dlg of Array.from(dlgs)) {
           if (window.getComputedStyle(dlg).display === 'none') continue;
           const radios = Array.from(
-            dlg.querySelectorAll('input[type="radio"]'),
-          ) as HTMLInputElement[];
+            dlg.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+          );
           for (const r of radios) {
             const val = (r.value || '').toUpperCase();
             const id = (r.id || '').toLowerCase();
@@ -1232,18 +1375,32 @@ export class SunatSolBotService {
               r.dispatchEvent(new Event('change', { bubbles: true }));
               interface WinDojo extends Window {
                 dijit?: {
-                  byNode: (n: Node) => { set: (k: string, v: unknown) => void; onChange?: (v: unknown) => void } | undefined;
-                  byId: (id: string) => { set: (k: string, v: unknown) => void; onChange?: (v: unknown) => void } | undefined;
+                  byNode: (n: Node) =>
+                    | {
+                        set: (k: string, v: unknown) => void;
+                        onChange?: (v: unknown) => void;
+                      }
+                    | undefined;
+                  byId: (id: string) =>
+                    | {
+                        set: (k: string, v: unknown) => void;
+                        onChange?: (v: unknown) => void;
+                      }
+                    | undefined;
                 };
               }
               const win = window as unknown as WinDojo;
               if (win.dijit) {
-                const w = win.dijit.byNode(r) || (r.id ? win.dijit.byId(r.id) : undefined);
+                const w =
+                  win.dijit.byNode(r) ||
+                  (r.id ? win.dijit.byId(r.id) : undefined);
                 if (w) {
                   try {
                     w.set('checked', true);
                     if (w.onChange) w.onChange(true);
-                  } catch {}
+                  } catch {
+                    // Ignorar si el widget Dojo no soporta onChange
+                  }
                 }
               }
               return true;
@@ -1281,9 +1438,13 @@ export class SunatSolBotService {
         .locator('input:not([type="hidden"])')
         .first();
 
-      if (!(await inputCantidad.isVisible({ timeout: 400 }).catch(() => false))) {
+      if (
+        !(await inputCantidad.isVisible({ timeout: 400 }).catch(() => false))
+      ) {
         inputCantidad = frameOrPage
-          .locator('[id="item.cantidad"], #txtCantidad, input[name*="cantidad"]')
+          .locator(
+            '[id="item.cantidad"], #txtCantidad, input[name*="cantidad"]',
+          )
           .first();
       }
 
@@ -1303,14 +1464,18 @@ export class SunatSolBotService {
             inp.dispatchEvent(new Event('blur', { bubbles: true }));
             interface WinDojo extends Window {
               dijit?: {
-                byNode: (n: Node) => {
-                  set: (k: string, v: unknown) => void;
-                  onChange?: (v: unknown) => void;
-                } | undefined;
-                byId: (id: string) => {
-                  set: (k: string, v: unknown) => void;
-                  onChange?: (v: unknown) => void;
-                } | undefined;
+                byNode: (n: Node) =>
+                  | {
+                      set: (k: string, v: unknown) => void;
+                      onChange?: (v: unknown) => void;
+                    }
+                  | undefined;
+                byId: (id: string) =>
+                  | {
+                      set: (k: string, v: unknown) => void;
+                      onChange?: (v: unknown) => void;
+                    }
+                  | undefined;
               };
             }
             const win = window as unknown as WinDojo;
@@ -1383,7 +1548,9 @@ export class SunatSolBotService {
 
       if (!(await inputCodigo.isVisible({ timeout: 350 }).catch(() => false))) {
         inputCodigo = frameOrPage
-          .locator('[id="item.codigoItem"], #txtCodigo, input[name*="codigoItem"]')
+          .locator(
+            '[id="item.codigoItem"], #txtCodigo, input[name*="codigoItem"]',
+          )
           .first();
       }
 
@@ -1417,7 +1584,9 @@ export class SunatSolBotService {
         await inputDesc.fill(item.descripcion.slice(0, 250)).catch(() => {});
         const descActual = await inputDesc.inputValue().catch(() => '');
         if (!descActual || descActual.trim() === '') {
-          await page.keyboard.type(item.descripcion.slice(0, 250), { delay: 15 });
+          await page.keyboard.type(item.descripcion.slice(0, 250), {
+            delay: 15,
+          });
         }
         await page.keyboard.press('Tab').catch(() => {});
       }
@@ -1468,10 +1637,7 @@ export class SunatSolBotService {
         // Sincronizar ÚNICAMENTE este input de Valor Unitario y su widget Dojo asociado
         await inputPrecio
           .evaluate(
-            (
-              inp: HTMLInputElement,
-              args: { pStr: string; pNum: number },
-            ) => {
+            (inp: HTMLInputElement, args: { pStr: string; pNum: number }) => {
               const { pStr, pNum } = args;
               inp.focus();
               inp.value = pStr;
@@ -1713,7 +1879,9 @@ export class SunatSolBotService {
         .catch(() => false);
 
       if (btnVisible) {
-        this.logger.log(`Presionando Continuar tras ítems (intento ${c + 1})...`);
+        this.logger.log(
+          `Presionando Continuar tras ítems (intento ${c + 1})...`,
+        );
         await btnContinuar.click({ force: true }).catch(() => {});
       }
 
