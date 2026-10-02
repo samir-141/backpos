@@ -754,74 +754,191 @@ export class SunatSolBotService {
     tipoComprobante: 'BOLETA' | 'FACTURA' = 'BOLETA',
   ): Promise<void> {
     const esFactura = tipoComprobante === 'FACTURA';
+    const codigoSunat = esFactura ? '11.5.3.1.1' : '11.5.4.1.1';
+    const descAplicacion = esFactura
+      ? 'Emitir Factura'
+      : 'Emitir Boleta de Venta';
+
     this.logger.debug(
-      `Navegando a Emisión de ${esFactura ? 'Factura' : 'Boleta'} Electrónica en SEE-SOL...`,
+      `Navegando a Emisión de ${esFactura ? 'Factura' : 'Boleta'} Electrónica en SEE-SOL (Código: ${codigoSunat})...`,
     );
 
-    // 1. Clic en pestaña o sección "Empresas"
+    // Estrategia 1: Invocación directa de la función global oficial ejecuta() o clickEnNivel4() de SUNAT SOL.
+    // Esto es instantáneo, 100% robusto y no depende del ancho del viewport (hidden-xs) ni de que el árbol esté desplegado.
+    let ejecutado = false;
     try {
-      const opcionEmpresas = page
-        .getByRole('heading', { name: 'Empresas' })
-        .or(page.getByText('Empresas'))
-        .first();
-      if (
-        await opcionEmpresas.isVisible({ timeout: 3500 }).catch(() => false)
-      ) {
-        await opcionEmpresas.click().catch(() => {});
-      }
-    } catch {
-      // Ignorar si Empresas no está visible
+      ejecutado = await page.evaluate(
+        ({ codigo, desc }) => {
+          interface WindowSunatMenu extends Window {
+            ejecuta?: (
+              url: string,
+              relocate: boolean,
+              desc: string,
+              padre: string,
+              codigo: string,
+            ) => void;
+            clickEnNivel4?: (el: unknown) => void;
+            $?: (selector: string) => {
+              length: number;
+              first: () => unknown;
+            };
+          }
+
+          try {
+            const win = window as unknown as WindowSunatMenu;
+
+            // A) Función global canónica ejecuta()
+            if (typeof win.ejecuta === 'function') {
+              win.ejecuta(
+                `MenuInternet.htm?action=execute&code=${codigo}`,
+                false,
+                desc,
+                '#nivel1_11',
+                codigo,
+              );
+              return true;
+            }
+
+            // B) Handler clickEnNivel4 vía jQuery si está disponible
+            const jq = win.$;
+            if (jq && typeof win.clickEnNivel4 === 'function') {
+              const el = jq(`[data-id="${codigo}"]`);
+              if (el && el.length > 0) {
+                win.clickEnNivel4(el.first());
+                return true;
+              }
+            }
+
+            // C) Disparar evento de click nativo sobre el nodo con data-id
+            const domEl = document.querySelector(`[data-id="${codigo}"]`);
+            if (domEl) {
+              (domEl as HTMLElement).click();
+              return true;
+            }
+          } catch (e) {
+            console.warn('[navegarAEmision] evaluate error:', e);
+          }
+          return false;
+        },
+        { codigo: codigoSunat, desc: descAplicacion },
+      );
+    } catch (err) {
+      this.logger.debug(
+        `Navegación directa por script no completada: ${err}. Usando fallback interactivo...`,
+      );
     }
 
-    // 2. Clic en "Comprobantes de pago"
-    try {
-      const menuComprobantes = page
-        .getByRole('listitem')
-        .filter({ hasText: 'Comprobantes de pago' })
-        .or(page.getByText('Comprobantes de pago'))
-        .first();
-      if (
-        await menuComprobantes.isVisible({ timeout: 2500 }).catch(() => false)
-      ) {
-        await menuComprobantes.click().catch(() => {});
+    if (!ejecutado) {
+      // Estrategia 2: Fallback interactivo disparando dispatchEvent en el elemento con data-id
+      try {
+        const itemExacto = page.locator(`li[data-id="${codigoSunat}"]`).first();
+        if ((await itemExacto.count()) > 0) {
+          await itemExacto.dispatchEvent('click').catch(() => {});
+          ejecutado = true;
+        }
+      } catch {
+        void 0;
       }
-    } catch {
-      // Ignorar si Comprobantes de pago no está en el DOM
     }
 
-    // 3. Clic en "SEE - SOL"
-    try {
-      const seeSol = page.getByText('SEE - SOL').first();
-      if (await seeSol.isVisible({ timeout: 2500 }).catch(() => false)) {
-        await seeSol.click().catch(() => {});
+    if (!ejecutado) {
+      // Estrategia 3: Fallback usando el buscador oficial del menú de SUNAT (#txtBusca)
+      try {
+        const txtBusca = page.locator('#txtBusca').first();
+        if (await txtBusca.isVisible({ timeout: 1500 }).catch(() => false)) {
+          await txtBusca.fill(descAplicacion);
+          await page.waitForTimeout(300);
+          const itemFiltrado = page
+            .locator(
+              `li[data-id="${codigoSunat}"], .resaltado:has-text("${descAplicacion}")`,
+            )
+            .filter({ visible: true })
+            .first();
+          if (
+            await itemFiltrado.isVisible({ timeout: 2000 }).catch(() => false)
+          ) {
+            await itemFiltrado.click({ force: true }).catch(() => {});
+            ejecutado = true;
+          }
+        }
+      } catch {
+        void 0;
       }
-    } catch {
-      // Ignorar si SEE - SOL no está visible
     }
 
-    // 4. Tipo de Comprobante específico (Boleta o Factura)
-    if (esFactura) {
-      const menuFactura = page.getByText('Factura Electrónica').first();
-      if (await menuFactura.isVisible({ timeout: 2500 }).catch(() => false)) {
-        await menuFactura.click().catch(() => {});
+    if (!ejecutado) {
+      // Estrategia 4: Fallback UI clásico desplegando acordeones
+      try {
+        const opcionEmpresas = page
+          .getByRole('heading', { name: 'Empresas' })
+          .or(page.getByText('Empresas'))
+          .filter({ visible: true })
+          .first();
+        if (
+          await opcionEmpresas.isVisible({ timeout: 2000 }).catch(() => false)
+        ) {
+          await opcionEmpresas.click().catch(() => {});
+        }
+      } catch {
+        void 0;
       }
-      const emitirFactura = page
-        .getByRole('link', { name: 'Emitir Factura' })
-        .or(page.getByText('Emitir Factura'))
-        .first();
-      await emitirFactura.waitFor({ state: 'visible', timeout: 15000 });
-      await emitirFactura.click();
-    } else {
-      const menuBoleta = page.getByText('Boleta de Venta Electrónica').first();
-      if (await menuBoleta.isVisible({ timeout: 2500 }).catch(() => false)) {
-        await menuBoleta.click().catch(() => {});
+
+      try {
+        const menuComprobantes = page
+          .getByText('Comprobantes de pago')
+          .filter({ visible: true })
+          .first();
+        if (
+          await menuComprobantes.isVisible({ timeout: 2000 }).catch(() => false)
+        ) {
+          await menuComprobantes.click().catch(() => {});
+        }
+      } catch {
+        void 0;
       }
-      const emitirBoleta = page
-        .getByRole('link', { name: 'Emitir Boleta de Venta' })
-        .or(page.getByText('Emitir Boleta de Venta'))
+
+      try {
+        const seeSol = page
+          .getByText('SEE - SOL')
+          .filter({ visible: true })
+          .first();
+        if (await seeSol.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await seeSol.click().catch(() => {});
+        }
+      } catch {
+        void 0;
+      }
+
+      const subMenuTipo = esFactura
+        ? page
+            .getByText('Factura Electrónica')
+            .filter({ visible: true })
+            .first()
+        : page
+            .getByText('Boleta de Venta Electrónica')
+            .filter({ visible: true })
+            .first();
+      if (await subMenuTipo.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await subMenuTipo.click().catch(() => {});
+      }
+
+      // En vez de .first().waitFor() (que se bloquea en elementos ocultos),
+      // se busca el elemento que esté visible o se fuerza el clic:
+      const botonOpcion = page
+        .locator(`li[data-id="${codigoSunat}"]`)
+        .or(page.getByText(descAplicacion, { exact: true }))
+        .filter({ visible: true })
         .first();
-      await emitirBoleta.waitFor({ state: 'visible', timeout: 15000 });
-      await emitirBoleta.click();
+
+      if (await botonOpcion.isVisible({ timeout: 3000 }).catch(() => false)) {
+        await botonOpcion.click().catch(() => {});
+      } else {
+        await page
+          .locator(`li[data-id="${codigoSunat}"]`)
+          .first()
+          .click({ force: true })
+          .catch(() => {});
+      }
     }
 
     // Esperar reactivamente a que el iframe de trabajo esté montado e interactivo
@@ -1476,7 +1593,9 @@ export class SunatSolBotService {
                 try {
                   w.set('value', Number(c));
                   if (w.onChange) w.onChange(Number(c));
-                } catch {}
+                } catch {
+                  void 0;
+                }
               }
             }
           }, cantStr)
@@ -1661,7 +1780,9 @@ export class SunatSolBotService {
                       w._setDisplayedValueAttr(pStr);
                     if (w.validate) w.validate();
                     if (w.onChange) w.onChange(pNum);
-                  } catch {}
+                  } catch {
+                    void 0;
+                  }
                 }
               }
             },
@@ -1685,7 +1806,9 @@ export class SunatSolBotService {
             if (typeof f === 'function') {
               try {
                 (f as () => void)();
-              } catch {}
+              } catch {
+                void 0;
+              }
             }
           }
         })

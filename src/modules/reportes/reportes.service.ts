@@ -55,6 +55,10 @@ export class ReportesService {
           include: { metodos_pago: true },
         },
         clientes: true,
+        comprobantes_electronicos: {
+          orderBy: { fecha_emision: 'desc' },
+          take: 1,
+        },
       },
       orderBy: { fecha: 'desc' },
     });
@@ -172,13 +176,33 @@ export class ReportesService {
       (a, b) => a.fecha.localeCompare(b.fecha),
     );
 
-    // Lista detallada de ventas
+    // Lista detallada de ventas con datos de comprobante electrónico real
     const listaVentas = ventas.map((v) => {
+      const comp = v.comprobantes_electronicos?.[0];
       let tipoComp = (v as any).tipo_comprobante;
+
+      if (comp) {
+        if (
+          comp.tipo_comprobante === '01' ||
+          comp.serie?.toUpperCase().startsWith('F') ||
+          comp.serie?.toUpperCase().startsWith('EF')
+        ) {
+          tipoComp = 'FACTURA';
+        } else if (
+          comp.tipo_comprobante === '03' ||
+          comp.serie?.toUpperCase().startsWith('B') ||
+          comp.serie?.toUpperCase().startsWith('EB')
+        ) {
+          tipoComp = 'BOLETA';
+        } else if (comp.serie?.toUpperCase().startsWith('NV')) {
+          tipoComp = 'NOTA_VENTA';
+        }
+      }
+
       if (!tipoComp) {
         if (v.clientes?.tipo_documento === 'RUC') tipoComp = 'FACTURA';
         else if (v.clientes?.tipo_documento === 'DNI') tipoComp = 'BOLETA';
-        else tipoComp = 'NOTA_VENTA';
+        else tipoComp = 'BOLETA'; // En farmacia las ventas por defecto son Boletas (Clientes Varios)
       }
 
       const itemsDetalle = v.detalles_ventas.map((d) => {
@@ -202,6 +226,18 @@ export class ReportesService {
         id: v.id,
         fecha: v.fecha,
         tipo_comprobante: tipoComp,
+        comprobante_electronico_id: comp?.id || null,
+        serie: comp?.serie || null,
+        correlativo: comp?.correlativo || null,
+        serie_numero: comp
+          ? `${comp.serie}-${String(comp.correlativo).padStart(8, '0')}`
+          : null,
+        estado_sunat:
+          comp?.estado || (v.estado === 'ANULADO' ? 'ANULADO' : 'PENDIENTE'),
+        mensaje_sunat: comp?.mensaje_respuesta || null,
+        tiene_xml: Boolean(comp?.xml_path || comp?.xml_firmado_path),
+        tiene_cdr: Boolean(comp?.cdr_xml_path || comp?.cdr_zip_path),
+        tiene_pdf: Boolean(comp?.pdf_path),
         cliente_nombre: v.clientes?.nombre || 'CLIENTE GENERAL',
         cliente_id: v.clientes?.id || null,
         // WhatsApp tiene prioridad porque es el canal de envío; si no existe,
