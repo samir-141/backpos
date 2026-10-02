@@ -179,6 +179,32 @@ export class FacturacionController {
     const solUsuario = this.encryption.decrypt(config.sol_usuario_encriptado);
     const solClave = this.encryption.decrypt(config.sol_clave_encriptada);
 
+    const rawReceptor = dto.receptor;
+    const rawTipoDoc = String(rawReceptor?.tipoDoc || '').trim();
+    const rawNumDoc = String(rawReceptor?.numeroDoc || '').trim();
+
+    const esSinDoc =
+      !rawReceptor ||
+      !rawNumDoc ||
+      rawNumDoc === '0' ||
+      rawNumDoc === '-' ||
+      rawNumDoc === '00000000' ||
+      !rawTipoDoc ||
+      rawTipoDoc === '0' ||
+      rawTipoDoc === 'SIN_DOCUMENTO' ||
+      rawTipoDoc === 'SIN DOCUMENTO' ||
+      rawTipoDoc === 'NINGUNO' ||
+      rawTipoDoc === '-' ||
+      rawTipoDoc === 'VARIOS';
+
+    const receptor = {
+      tipoDoc: esSinDoc ? '0' : rawTipoDoc,
+      numeroDoc: esSinDoc ? undefined : rawNumDoc,
+      razonSocialODatos:
+        rawReceptor?.razonSocialODatos ||
+        (esSinDoc ? 'CLIENTES VARIOS' : undefined),
+    };
+
     return this.solBotService.emitirBoletaSol({
       boticaId: req.botica_id,
       credenciales: {
@@ -186,7 +212,7 @@ export class FacturacionController {
         usuario: solUsuario,
         clave: solClave,
       },
-      receptor: dto.receptor,
+      receptor,
       items: dto.items,
       observaciones: dto.observaciones,
       headless: dto.headless !== undefined ? dto.headless : true,

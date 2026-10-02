@@ -181,6 +181,112 @@ describe('SunatSolBotService & SunatSolEmissionProvider', () => {
     );
   });
 
+  it('debe emitir boleta sin DNI ni RUC (sin documento / Nuevo RUS / Clientes Varios) hacia el bot de SUNAT SOL', async () => {
+    const spyEmitir = jest
+      .spyOn(botService, 'emitirBoletaSol')
+      .mockResolvedValue({
+        exito: true,
+        numeroComprobante: 'EB01-00000102',
+        serie: 'EB01',
+        correlativo: 102,
+        mensajeRespuesta: 'Aceptado por SUNAT SEE-SOL',
+        pdfBuffer: Buffer.from('%PDF-1.4 test sin doc'),
+        duracionMs: 1400,
+      });
+
+    const ctx = {
+      boticaId: 'botica-123',
+      perfilTributario: {},
+      comprobante: {
+        serie: 'EB01',
+        numero: 102,
+        cliente_tipo_documento: '0',
+        cliente_numero_documento: '0',
+        cliente_razon_social: 'CLIENTES VARIOS',
+        detalles: [
+          {
+            codigo_producto: 'IBU-400',
+            descripcion: 'Ibuprofeno 400mg',
+            cantidad: 1,
+            precio_unitario: 3.5,
+          },
+        ],
+      },
+    };
+
+    const resultado = await provider.emitir(ctx);
+
+    expect(resultado.exito).toBe(true);
+    expect(resultado.estado).toBe('ACEPTADO');
+    expect(resultado.ticket_sunat).toBe('EB01-00000102');
+    expect(spyEmitir).toHaveBeenCalledWith(
+      expect.objectContaining({
+        receptor: expect.objectContaining({
+          tipoDoc: '0',
+          numeroDoc: undefined,
+          razonSocialODatos: 'CLIENTES VARIOS',
+        }),
+        items: [
+          expect.objectContaining({
+            codigo: 'IBU-400',
+            descripcion: 'Ibuprofeno 400mg',
+            cantidad: 1,
+            precioUnitario: 3.5,
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('debe emitir boleta con campos de cliente totalmente vacíos o undefined (sin datos / sin DNI ni RUC)', async () => {
+    const spyEmitir = jest
+      .spyOn(botService, 'emitirBoletaSol')
+      .mockResolvedValue({
+        exito: true,
+        numeroComprobante: 'EB01-00000103',
+        serie: 'EB01',
+        correlativo: 103,
+        mensajeRespuesta: 'Aceptado por SUNAT SEE-SOL',
+        pdfBuffer: Buffer.from('%PDF-1.4 test vacio'),
+        duracionMs: 1300,
+      });
+
+    const ctx = {
+      boticaId: 'botica-123',
+      perfilTributario: {},
+      comprobante: {
+        serie: 'EB01',
+        numero: 103,
+        cliente_tipo_documento: '',
+        cliente_numero_documento: '',
+        cliente_razon_social: '',
+        detalles: [
+          {
+            codigo_producto: 'ASP-100',
+            descripcion: 'Aspirina 100mg',
+            cantidad: 1,
+            precio_unitario: 2.0,
+          },
+        ],
+      },
+    };
+
+    const resultado = await provider.emitir(ctx);
+
+    expect(resultado.exito).toBe(true);
+    expect(resultado.estado).toBe('ACEPTADO');
+    expect(resultado.ticket_sunat).toBe('EB01-00000103');
+    expect(spyEmitir).toHaveBeenCalledWith(
+      expect.objectContaining({
+        receptor: expect.objectContaining({
+          tipoDoc: '0',
+          numeroDoc: undefined,
+          razonSocialODatos: 'CLIENTES VARIOS',
+        }),
+      }),
+    );
+  });
+
   it('debe manejar error si faltan credenciales SOL', async () => {
     mockPrismaService.perfiles_tributarios.findFirst.mockResolvedValueOnce(
       null,

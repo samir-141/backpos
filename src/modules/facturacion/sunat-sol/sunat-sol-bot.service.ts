@@ -122,6 +122,14 @@ export class SunatSolBotService {
       page = await context.newPage();
       page.setDefaultTimeout(timeout);
 
+      // Auto-aceptar diálogos nativos del navegador de SUNAT (ej. confirmación de emisión sin documento)
+      page.on('dialog', async (dialog) => {
+        this.logger.log(
+          `[SUNAT Dialog detectado]: "${dialog.message()}" (${dialog.type()}) -> Aceptando automáticamente`,
+        );
+        await dialog.accept().catch(() => {});
+      });
+
       // 1. Autenticación SOL
       await this.ejecutarLogin(page, params.credenciales);
       await this.cerrarModalesAviso(page);
@@ -228,9 +236,70 @@ export class SunatSolBotService {
         ? 0
         : 350;
 
+    if (!process.env.PLAYWRIGHT_BROWSERS_PATH) {
+      process.env.PLAYWRIGHT_BROWSERS_PATH = '0';
+    }
+
+    let executablePath: string | undefined = undefined;
+    if (process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH) {
+      executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+    } else {
+      // 1. Probar el path default de Playwright
+      try {
+        const defaultPath = chromium.executablePath();
+        if (fs.existsSync(defaultPath)) {
+          executablePath = defaultPath;
+        }
+      } catch {}
+
+      // 2. Si no existe en el path por defecto (ej. en Render donde .cache no persiste), buscar en node_modules
+      if (!executablePath) {
+        try {
+          const localBrowsersDir = path.join(
+            process.cwd(),
+            'node_modules',
+            'playwright-core',
+            '.local-browsers',
+          );
+          if (fs.existsSync(localBrowsersDir)) {
+            const findExecutable = (dir: string): string | null => {
+              const entries = fs.readdirSync(dir, { withFileTypes: true });
+              for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                  const res = findExecutable(fullPath);
+                  if (res) return res;
+                } else if (
+                  entry.name === 'chrome-headless-shell' ||
+                  entry.name === 'chrome' ||
+                  entry.name === 'chrome.exe' ||
+                  entry.name === 'chromium'
+                ) {
+                  return fullPath;
+                }
+              }
+              return null;
+            };
+            const found = findExecutable(localBrowsersDir);
+            if (found) {
+              executablePath = found;
+              this.logger.log(
+                `[Playwright] Ejecutable de Chromium localizado en node_modules: ${executablePath}`,
+              );
+            }
+          }
+        } catch (e: any) {
+          this.logger.debug(
+            `Error al buscar Chromium en node_modules: ${e.message}`,
+          );
+        }
+      }
+    }
+
     return await chromium.launch({
       headless,
       slowMo,
+      executablePath,
       args: headless
         ? [
             '--no-sandbox',
@@ -539,7 +608,24 @@ export class SunatSolBotService {
 
   /**
    * Mapea el tipo de documento del receptor con la opción exacta en el combo Dojo de SUNAT SOL.
-   * Basado en el recorrido exhaustivo del menú grabado en la sesión en vivo:
+   * Si es emisión sin documento (Nuevo RUS / clientes varios), retorna null para dejar vacío o buscar SIN DOCUMENTO.
+   * Basado en el catálogo oficial de SUNAT SOL:
+   * - DOC. NACIONAL DE IDENTIDAD
+   * - REG. UNICO DE CONTRIBUYENTES
+   * - CARNÉ DE EXTRANJERÍA
+   * - PASAPORTE
+   * - CARNE DE IDENTIDAD
+   * - DOC.IDENTIF.PERS.NAT.NO DOM.
+   * - TAX IDENTIFICATION NUMBER
+   * - IDENTIFICATION NUMBER
+   * - PERMISO TEMP.PERMANENCIA - PT
+   * - SALVOCONDUCTO
+   * - CARNE PERMISO TEMP.PERMAN -CP
+  /**
+   * Mapea el tipo de documento del receptor con la opción exacta en el combo Dojo de SUNAT SOL.
+   * Si es emisión sin documento (Nuevo RUS / clientes varios / sin datos), retorna 'SIN DOCUMENTO'.
+   * Catálogo de opciones conocidas en SUNAT SOL:
+   * - SIN DOCUMENTO
    * - DOC. NACIONAL DE IDENTIDAD
    * - REG. UNICO DE CONTRIBUYENTES
    * - CARNÉ DE EXTRANJERÍA
@@ -553,11 +639,30 @@ export class SunatSolBotService {
    * - CARNE PERMISO TEMP.PERMAN -CP
    * - DOC.TRIB.NO.DOM.SIN.RUC
    */
-  private obtenerNombreOpcionTipoDoc(tipoDoc: string, numDoc?: string): string {
-    if (!numDoc || tipoDoc === '-' || tipoDoc === '0') {
-      return 'DOC.TRIB.NO.DOM.SIN.RUC';
+  private obtenerNombreOpcionTipoDoc(
+    tipoDoc?: string,
+    numDoc?: string,
+  ): string {
+    const numLimpio = (numDoc || '').trim();
+    const t = (tipoDoc || '').trim().toUpperCase();
+
+    const esSinDoc =
+      !numLimpio ||
+      numLimpio === '0' ||
+      numLimpio === '-' ||
+      numLimpio === '00000000' ||
+      !t ||
+      t === '0' ||
+      t === 'SIN_DOCUMENTO' ||
+      t === 'SIN DOCUMENTO' ||
+      t === 'NINGUNO' ||
+      t === '-' ||
+      t === 'VARIOS';
+
+    if (esSinDoc) {
+      return 'SIN DOCUMENTO';
     }
-    const t = tipoDoc.toUpperCase();
+
     if (t === '1' || t === 'DNI') return 'DOC. NACIONAL DE IDENTIDAD';
     if (t === '6' || t === 'RUC') return 'REG. UNICO DE CONTRIBUYENTES';
     if (t === '4' || t === 'CE' || t === 'CARNET_EXTRANJERIA')
@@ -580,7 +685,8 @@ export class SunatSolBotService {
   }
 
   /**
-   * Paso 1: Configurar receptor (DNI / Sin doc / RUC / otros) y moneda.
+   * Paso 1: Configurar receptor (DNI / RUC / Sin documento / varios) y moneda.
+   * Si no se especifica cliente o se manda vacío, se emite boleta sin datos (< S/ 700).
    */
   private async llenarPasoReceptor(
     page: Page,
@@ -589,83 +695,238 @@ export class SunatSolBotService {
     this.logger.debug('Llenando datos del receptor...');
     const frameOrPage = await this.obtenerFrameTrabajo(page);
 
-    const tipoDoc = params.receptor.tipoDoc;
-    const numDoc = params.receptor.numeroDoc?.trim();
+    const tipoDoc = params.receptor?.tipoDoc;
+    const rawNumDoc = params.receptor?.numeroDoc?.trim();
+    const esSinDoc =
+      !rawNumDoc ||
+      rawNumDoc === '0' ||
+      rawNumDoc === '-' ||
+      rawNumDoc === '00000000' ||
+      !tipoDoc ||
+      tipoDoc === '0' ||
+      tipoDoc === 'SIN_DOCUMENTO' ||
+      tipoDoc === 'SIN DOCUMENTO' ||
+      tipoDoc === 'NINGUNO' ||
+      tipoDoc === '-' ||
+      tipoDoc === 'VARIOS';
 
-    // 1. Selector de Tipo de Documento en portal SOL (Dojo / iframeApplication)
-    const comboTipoDoc = frameOrPage
-      .locator('[id="inicio.tipoDocumento"]')
-      .first();
-    const flechaCombo = frameOrPage.locator('.dijitReset.dijitRight').first();
-
+    const numDoc = esSinDoc ? undefined : rawNumDoc;
     const nombreOpcion = this.obtenerNombreOpcionTipoDoc(tipoDoc, numDoc);
 
-    if (await comboTipoDoc.isVisible({ timeout: 4000 }).catch(() => false)) {
-      await comboTipoDoc.click().catch(() => {});
-      await page.waitForTimeout(300);
+    if (esSinDoc) {
+      this.logger.log(
+        'Configurando emisión de Boleta SIN DOCUMENTO / SIN DATOS (Régimen RUS / Clientes Varios < S/ 700)...',
+      );
 
-      const opt = frameOrPage
-        .getByRole('option', { name: nombreOpcion })
+      // A) Comprobar si existe selector por Radio Button (legacy o alternativo)
+      const rdoSinDoc = frameOrPage
+        .locator(
+          'input[value="0"], #rdoSinDoc, input[name*="tipoDoc"][value="0"], input[id*="SinDoc"]',
+        )
+        .or(frameOrPage.getByText('Sin Documento', { exact: false }))
         .first();
-      if (await opt.isVisible({ timeout: 2000 }).catch(() => false)) {
-        await opt.click();
-      } else if (
-        await flechaCombo.isVisible({ timeout: 1500 }).catch(() => false)
-      ) {
-        await flechaCombo.click().catch(() => {});
+      if (await rdoSinDoc.isVisible({ timeout: 1200 }).catch(() => false)) {
+        await rdoSinDoc.check().catch(() => {});
         await page.waitForTimeout(300);
-        await frameOrPage
-          .getByRole('option', { name: nombreOpcion })
-          .first()
-          .click()
-          .catch(() => {});
       }
-      await page.waitForTimeout(300);
-    } else {
-      // Fallback selector legacy por radio button
-      if (tipoDoc === '1' && numDoc) {
-        const rdoDni = frameOrPage
-          .locator(
-            'input[value="1"], #rdoDni, input[name*="tipoDoc"][value="1"]',
-          )
-          .first();
-        if (await rdoDni.isVisible({ timeout: 1500 }).catch(() => false)) {
-          await rdoDni.check();
-        }
-      } else if (tipoDoc === '6' && numDoc) {
-        const rdoRuc = frameOrPage
-          .locator(
-            'input[value="6"], #rdoRuc, input[name*="tipoDoc"][value="6"]',
-          )
-          .first();
-        if (await rdoRuc.isVisible({ timeout: 1500 }).catch(() => false)) {
-          await rdoRuc.check();
-        }
-      } else {
-        const rdoSinDoc = frameOrPage
-          .locator(
-            'input[value="0"], #rdoSinDoc, input[name*="tipoDoc"][value="0"]',
-          )
-          .or(frameOrPage.getByText('Sin Documento'))
-          .first();
-        if (await rdoSinDoc.isVisible({ timeout: 1500 }).catch(() => false)) {
-          await rdoSinDoc.check();
-        }
-      }
-    }
 
-    // 2. Número de documento
-    if (numDoc) {
+      // B) Combo Dojo / Select de Tipo de Documento:
+      // En SUNAT SOL se selecciona la opción "SIN DOCUMENTO"
+      const comboTipoDoc = frameOrPage
+        .locator('[id="inicio.tipoDocumento"]')
+        .first();
+      const flechaCombo = frameOrPage.locator('.dijitReset.dijitRight').first();
+
+      let opcionSeleccionada = false;
+
+      // Intentar primero con la API de Dojo directamente para mayor precisión
+      try {
+        opcionSeleccionada = await frameOrPage.evaluate(() => {
+          const dijit = (window as any).dijit;
+          if (dijit) {
+            const widget = dijit.byId('inicio.tipoDocumento');
+            if (widget) {
+              if (widget.store && widget.store.data) {
+                const item = widget.store.data.find((d: any) =>
+                  /sin documento|sin doc|doc\.trib|varios|ninguno/i.test(
+                    String(d.name || d.label || d.descripcion || d.id || ''),
+                  ),
+                );
+                if (item) {
+                  widget.set('value', item.id !== undefined ? item.id : item.value);
+                  widget.set(
+                    'displayedValue',
+                    item.name || item.label || 'SIN DOCUMENTO',
+                  );
+                  if (widget.onChange) widget.onChange(widget.get('value'));
+                  return true;
+                }
+              }
+              widget.set('displayedValue', 'SIN DOCUMENTO');
+            }
+          }
+          return false;
+        });
+      } catch {}
+
+      if (
+        !opcionSeleccionada &&
+        (await comboTipoDoc.isVisible({ timeout: 2500 }).catch(() => false))
+      ) {
+        try {
+          await comboTipoDoc.click().catch(() => {});
+          await page.waitForTimeout(300);
+
+          const optSinDoc = frameOrPage
+            .locator(
+              '.dijitMenuItem, [role="option"], tr.dijitMenuItem, div.dijitMenuItem',
+            )
+            .filter({ hasText: /sin documento|sin doc|varios|doc\.trib/i })
+            .first();
+
+          if (await optSinDoc.isVisible({ timeout: 1500 }).catch(() => false)) {
+            await optSinDoc.click().catch(() => {});
+            opcionSeleccionada = true;
+          } else if (
+            await flechaCombo.isVisible({ timeout: 1000 }).catch(() => false)
+          ) {
+            await flechaCombo.click().catch(() => {});
+            await page.waitForTimeout(300);
+            const optSinDoc2 = frameOrPage
+              .locator(
+                '.dijitMenuItem, [role="option"], tr.dijitMenuItem, div.dijitMenuItem',
+              )
+              .filter({ hasText: /sin documento|sin doc|varios|doc\.trib/i })
+              .first();
+            if (
+              await optSinDoc2.isVisible({ timeout: 1000 }).catch(() => false)
+            ) {
+              await optSinDoc2.click().catch(() => {});
+              opcionSeleccionada = true;
+            }
+          }
+        } catch {}
+
+        // Fallback: escribir directamente "SIN DOCUMENTO" en el combo
+        if (!opcionSeleccionada) {
+          try {
+            await comboTipoDoc.click().catch(() => {});
+            await page.keyboard.press('Control+A').catch(() => {});
+            await page.keyboard.press('Backspace').catch(() => {});
+            await comboTipoDoc.fill('SIN DOCUMENTO').catch(() => {});
+            await page.waitForTimeout(200);
+            await page.keyboard.press('Enter').catch(() => {});
+          } catch {}
+        }
+      }
+
+      // Fallback selector HTML nativo <select> si aplica
+      const selectTipoDoc = frameOrPage
+        .locator('select[name*="tipoDocumento"], select[id*="tipoDocumento"]')
+        .first();
+      if (await selectTipoDoc.isVisible({ timeout: 1000 }).catch(() => false)) {
+        await selectTipoDoc
+          .selectOption({ label: /sin documento|varios/i })
+          .catch(async () => {
+            await selectTipoDoc.selectOption({ value: '0' }).catch(() => {});
+          });
+      }
+
+      // C) Campo número de documento: DEBE estar completamente vacío
       const inputNumDoc = frameOrPage
         .locator(
           '[id="inicio.numeroDocumento"], #txtNumDoc, #numDoc, input[name*="numDoc"]',
         )
         .first();
-      if (await inputNumDoc.isVisible({ timeout: 3000 }).catch(() => false)) {
-        await inputNumDoc.click();
-        await inputNumDoc.fill(numDoc);
-        await page.keyboard.press('Tab');
-        await page.waitForTimeout(800);
+      if (await inputNumDoc.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await inputNumDoc.fill('').catch(() => {});
+      }
+      try {
+        await frameOrPage.evaluate(() => {
+          const dijit = (window as any).dijit;
+          if (dijit) {
+            dijit.byId('inicio.numeroDocumento')?.set('value', '');
+          }
+          const el = document.getElementById(
+            'inicio.numeroDocumento',
+          ) as HTMLInputElement;
+          if (el) el.value = '';
+        });
+      } catch {}
+    } else {
+      // 1. Selector de Tipo de Documento en portal SOL (Dojo / iframeApplication)
+      const comboTipoDoc = frameOrPage
+        .locator('[id="inicio.tipoDocumento"]')
+        .first();
+      const flechaCombo = frameOrPage.locator('.dijitReset.dijitRight').first();
+
+      if (await comboTipoDoc.isVisible({ timeout: 4000 }).catch(() => false)) {
+        await comboTipoDoc.click().catch(() => {});
+        await page.waitForTimeout(300);
+
+        const opt = frameOrPage
+          .getByRole('option', { name: nombreOpcion })
+          .or(
+            frameOrPage
+              .locator('.dijitMenuItem, [role="option"]')
+              .filter({ hasText: nombreOpcion }),
+          )
+          .first();
+        if (await opt.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await opt.click();
+        } else if (
+          await flechaCombo.isVisible({ timeout: 1500 }).catch(() => false)
+        ) {
+          await flechaCombo.click().catch(() => {});
+          await page.waitForTimeout(300);
+          await frameOrPage
+            .getByRole('option', { name: nombreOpcion })
+            .or(
+              frameOrPage
+                .locator('.dijitMenuItem, [role="option"]')
+                .filter({ hasText: nombreOpcion }),
+            )
+            .first()
+            .click()
+            .catch(() => {});
+        }
+        await page.waitForTimeout(300);
+      } else {
+        // Fallback selector legacy por radio button
+        if (tipoDoc === '1' && numDoc) {
+          const rdoDni = frameOrPage
+            .locator(
+              'input[value="1"], #rdoDni, input[name*="tipoDoc"][value="1"]',
+            )
+            .first();
+          if (await rdoDni.isVisible({ timeout: 1500 }).catch(() => false)) {
+            await rdoDni.check();
+          }
+        } else if (tipoDoc === '6' && numDoc) {
+          const rdoRuc = frameOrPage
+            .locator(
+              'input[value="6"], #rdoRuc, input[name*="tipoDoc"][value="6"]',
+            )
+            .first();
+          if (await rdoRuc.isVisible({ timeout: 1500 }).catch(() => false)) {
+            await rdoRuc.check();
+          }
+        }
+      }
+
+      // 2. Número de documento
+      if (numDoc) {
+        const inputNumDoc = frameOrPage
+          .locator(
+            '[id="inicio.numeroDocumento"], #txtNumDoc, #numDoc, input[name*="numDoc"]',
+          )
+          .first();
+        if (await inputNumDoc.isVisible({ timeout: 3000 }).catch(() => false)) {
+          await inputNumDoc.click();
+          await inputNumDoc.fill(numDoc);
+          await page.keyboard.press('Tab');
+          await page.waitForTimeout(800);
+        }
       }
     }
 
@@ -677,8 +938,8 @@ export class SunatSolBotService {
       await selectMoneda.selectOption({ label: 'SOLES' }).catch(() => {});
     }
 
-    // 4. Continuar al siguiente paso: en SUNAT SOL se pulsa Continuar para validar DNI/RUC y avanzar a la pantalla de ítems
-    for (let c = 0; c < 2; c++) {
+    // 4. Continuar al siguiente paso: en SUNAT SOL se pulsa Continuar para validar DNI/RUC o avanzar sin doc a la pantalla de ítems
+    for (let c = 0; c < 3; c++) {
       // Si ya llegamos a la pantalla de ítems (Adicionar visible), NO volver a presionar Continuar
       const btnAdicionarYaVisible = frameOrPage
         .getByRole('button', { name: 'Adicionar' })
@@ -719,16 +980,46 @@ export class SunatSolBotService {
         await page.waitForTimeout(1500);
 
         // Si aparece diálogo modal de confirmación o alerta (Dojo / SUNAT)
-        const btnAceptarAviso = frameOrPage
-          .getByRole('button', { name: 'Aceptar' })
-          .or(frameOrPage.locator('#dlgBtnAceptar'))
-          .filter({ visible: true })
-          .first();
-        if (
-          await btnAceptarAviso.isVisible({ timeout: 2000 }).catch(() => false)
-        ) {
-          await btnAceptarAviso.click().catch(() => {});
-          await page.waitForTimeout(600);
+        // Ejemplo: "¿Está seguro de continuar sin identificar al cliente?" o confirmación
+        const modalButtons = [
+          '#dlgBtnAceptar',
+          'button:has-text("Aceptar")',
+          'input[value="Aceptar"]',
+          'button:has-text("Sí")',
+          'button:has-text("Si")',
+          'input[value="Sí"]',
+          'input[value="Si"]',
+          '.dijitDialog button:has-text("Aceptar")',
+          '.dijitDialog button:has-text("Sí")',
+          '.dijitDialog button:has-text("Si")',
+          '.dijitDialog button:has-text("Continuar")',
+        ];
+
+        for (const sel of modalButtons) {
+          try {
+            const btnInFrame = frameOrPage
+              .locator(sel)
+              .filter({ visible: true })
+              .first();
+            if (
+              await btnInFrame.isVisible({ timeout: 800 }).catch(() => false)
+            ) {
+              this.logger.log(`Aceptando modal de confirmación en frame: ${sel}`);
+              await btnInFrame.click().catch(() => {});
+              await page.waitForTimeout(800);
+              break;
+            }
+            const btnInPage = page
+              .locator(sel)
+              .filter({ visible: true })
+              .first();
+            if (await btnInPage.isVisible({ timeout: 800 }).catch(() => false)) {
+              this.logger.log(`Aceptando modal de confirmación en página: ${sel}`);
+              await btnInPage.click().catch(() => {});
+              await page.waitForTimeout(800);
+              break;
+            }
+          } catch {}
         }
       }
     }

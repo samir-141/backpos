@@ -35,13 +35,13 @@ export class SolBotItemDto {
 }
 
 export class SolBotReceptorDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     example: '1',
-    description: '1: DNI, 4: Carnet Extr, 0: Sin documento',
+    description: '1: DNI, 6: RUC, 4: Carnet Extr, 0: Sin documento (dejar vacío para clientes varios)',
   })
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  tipoDoc: string;
+  tipoDoc?: string;
 
   @ApiPropertyOptional({ example: '72345678' })
   @IsOptional()
@@ -55,10 +55,14 @@ export class SolBotReceptorDto {
 }
 
 export class SolBotEmitirBoletaDto {
-  @ApiProperty({ type: SolBotReceptorDto })
+  @ApiPropertyOptional({
+    type: SolBotReceptorDto,
+    description: 'Datos del cliente. Si se omite o se manda vacío, se emite boleta sin datos / clientes varios (< S/ 700)',
+  })
+  @IsOptional()
   @ValidateNested()
   @Type(() => SolBotReceptorDto)
-  receptor: SolBotReceptorDto;
+  receptor?: SolBotReceptorDto;
 
   @ApiProperty({ type: [SolBotItemDto] })
   @IsArray()

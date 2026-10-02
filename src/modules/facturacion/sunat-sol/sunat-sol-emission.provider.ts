@@ -82,26 +82,53 @@ export class SunatSolEmissionProvider implements IEmissionProvider {
         !solUsuario || /^\d{8}$/.test(solUsuario) || config.ruc?.length === 8;
     }
 
-    // 2. Mapear receptor (DNI, RUC, etc.)
-    const rawTipoDoc =
-      comprobante.cliente_tipo_documento || comprobante.cliente_tipo_doc || '1';
-    let tipoDoc = rawTipoDoc;
-    if (rawTipoDoc === 'RUC') tipoDoc = '6';
-    else if (rawTipoDoc === 'DNI') tipoDoc = '1';
-    else if (rawTipoDoc === 'CE' || rawTipoDoc === 'CARNET_EXTRANJERIA')
-      tipoDoc = '4';
-    else if (rawTipoDoc === 'PASAPORTE') tipoDoc = '7';
+    // 2. Mapear receptor (DNI, RUC, Sin Documento / RUS, etc.)
+    const rawTipoDoc = String(
+      comprobante.cliente_tipo_documento || comprobante.cliente_tipo_doc || '',
+    ).trim();
+
+    const rawNumDoc = String(
+      comprobante.cliente_numero_documento ||
+        comprobante.cliente_numero_doc ||
+        '',
+    ).trim();
+
+    const esSinDoc =
+      !rawNumDoc ||
+      rawNumDoc === '0' ||
+      rawNumDoc === '-' ||
+      rawNumDoc === '00000000' ||
+      rawTipoDoc === '0' ||
+      rawTipoDoc === 'SIN_DOCUMENTO' ||
+      rawTipoDoc === 'SIN DOCUMENTO' ||
+      rawTipoDoc === 'NINGUNO' ||
+      rawTipoDoc === '-' ||
+      rawTipoDoc === 'VARIOS';
+
+    let tipoDoc = '0';
+    let numeroDoc: string | undefined = undefined;
+
+    if (!esSinDoc) {
+      if (rawTipoDoc === 'RUC' || rawTipoDoc === '6') tipoDoc = '6';
+      else if (rawTipoDoc === 'DNI' || rawTipoDoc === '1') tipoDoc = '1';
+      else if (
+        rawTipoDoc === 'CE' ||
+        rawTipoDoc === 'CARNET_EXTRANJERIA' ||
+        rawTipoDoc === '4'
+      )
+        tipoDoc = '4';
+      else if (rawTipoDoc === 'PASAPORTE' || rawTipoDoc === '7') tipoDoc = '7';
+      else tipoDoc = rawTipoDoc || '1';
+      numeroDoc = rawNumDoc;
+    }
 
     const receptor = {
       tipoDoc,
-      numeroDoc:
-        comprobante.cliente_numero_documento ||
-        comprobante.cliente_numero_doc ||
-        undefined,
+      numeroDoc,
       razonSocialODatos:
         comprobante.cliente_razon_social ||
         comprobante.cliente_nombre ||
-        undefined,
+        (esSinDoc ? 'CLIENTES VARIOS' : undefined),
       direccion: comprobante.cliente_direccion || undefined,
     };
 

@@ -7,7 +7,7 @@ export interface SunatSolCredenciales {
 }
 
 export interface SunatSolReceptor {
-  tipoDoc: '1' | '6' | '4' | '7' | '0' | string; // 1: DNI, 6: RUC, 4: Carnet de extranjería, 7: Pasaporte, 0: Doc Trib No Dom / Sin doc
+  tipoDoc?: '1' | '6' | '4' | '7' | '0' | string; // 1: DNI, 6: RUC, 4: Carnet de extranjería, 7: Pasaporte, 0: Doc Trib No Dom / Sin doc
   numeroDoc?: string;
   razonSocialODatos?: string;
   direccion?: string;
@@ -34,7 +34,7 @@ export interface EmitirBoletaSolParams {
   tipoComprobante?: 'BOLETA' | 'FACTURA';
   fechaEmision?: Date;
   moneda?: 'PEN' | 'USD';
-  receptor: SunatSolReceptor;
+  receptor?: SunatSolReceptor;
   items: SunatSolItem[];
   observaciones?: string;
   timeoutMs?: number;
