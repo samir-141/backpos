@@ -995,14 +995,38 @@ export class SunatSolBotService {
   }
 
   /**
+   * Obtiene el código interno de SUNAT SOL para el tipo de documento.
+   */
+  private obtenerCodigoTipoDoc(tipoDoc?: string, numDoc?: string): string {
+    const opcion = this.obtenerNombreOpcionTipoDoc(tipoDoc, numDoc);
+    if (opcion === 'SIN DOCUMENTO') return '0';
+    if (opcion === 'DOC. NACIONAL DE IDENTIDAD') return '1';
+    if (opcion === 'REG. UNICO DE CONTRIBUYENTES') return '6';
+    if (opcion === 'CARNÉ DE EXTRANJERÍA') return '4';
+    if (opcion === 'PASAPORTE') return '7';
+    if (opcion === 'CARNE DE IDENTIDAD') return 'A';
+    if (opcion === 'DOC.IDENTIF.PERS.NAT.NO DOM.') return 'B';
+    if (opcion === 'TAX IDENTIFICATION NUMBER') return 'C';
+    if (opcion === 'IDENTIFICATION NUMBER') return 'D';
+    if (opcion === 'PERMISO TEMP.PERMANENCIA - PT') return 'E';
+    if (opcion === 'SALVOCONDUCTO') return 'F';
+    if (opcion === 'CARNE PERMISO TEMP.PERMAN -CP') return 'G';
+    return '1';
+  }
+
+  /**
    * Paso 1: Configurar receptor (DNI / RUC / Sin documento / varios) y moneda.
-   * Si no se especifica cliente o se manda vacío, se emite boleta sin datos (< S/ 700).
+   * Flujo ordenado en 4 pasos:
+   * 1. Seleccionar tipo de documento (DNI, RUC, SIN DOCUMENTO, etc.).
+   * 2. Rellenar datos (número de documento y "CLIENTE GENERAL" o datos del cliente).
+   * 3. Seleccionar la moneda (SOLES / PEN).
+   * 4. Presionar Continuar para avanzar a la pantalla de ítems.
    */
   private async llenarPasoReceptor(
     page: Page,
     params: EmitirBoletaSolParams,
   ): Promise<void> {
-    this.logger.debug('Llenando datos del receptor...');
+    this.logger.debug('Iniciando Paso 1: Receptor y Moneda...');
     const frameOrPage = await this.obtenerFrameTrabajo(page);
 
     const tipoDoc = params.receptor?.tipoDoc;
@@ -1022,34 +1046,36 @@ export class SunatSolBotService {
 
     const numDoc = esSinDoc ? undefined : rawNumDoc;
     const nombreOpcion = this.obtenerNombreOpcionTipoDoc(tipoDoc, numDoc);
+    const codigoDoc = this.obtenerCodigoTipoDoc(tipoDoc, numDoc);
 
-    if (esSinDoc) {
-      this.logger.log(
-        'Configurando emisión de Boleta SIN DOCUMENTO / SIN DATOS (Régimen RUS / Clientes Varios < S/ 700)...',
+    // -------------------------------------------------------------------------
+    // 1. SELECCIONAR EL TIPO DE DOCUMENTO (DNI, RUC, SIN DOCUMENTO, ETC.)
+    // -------------------------------------------------------------------------
+    this.logger.debug(
+      `[Paso 1] Seleccionando tipo de documento: "${nombreOpcion}" (código "${codigoDoc}")...`,
+    );
+
+    // A) Si el menú flotante de opciones ya está desplegado en pantalla, hacer clic directo en la opción
+    const itemMenuAbierto = frameOrPage
+      .locator(
+        '.dijitMenuItem, [role="option"], tr.dijitMenuItem, td.dijitMenuItem, div.dijitMenuItem',
+      )
+      .filter({ hasText: nombreOpcion })
+      .first();
+
+    let docSeleccionado = false;
+    if (await itemMenuAbierto.isVisible({ timeout: 600 }).catch(() => false)) {
+      this.logger.debug(
+        `[Paso 1] Opción "${nombreOpcion}" visible en popup desplegado; seleccionando con clic directo.`,
       );
+      await itemMenuAbierto.click({ force: true }).catch(() => {});
+      docSeleccionado = true;
+    }
 
-      // A) Comprobar si existe selector por Radio Button (legacy o alternativo)
-      const rdoSinDoc = frameOrPage
-        .locator(
-          'input[value="0"], #rdoSinDoc, input[name*="tipoDoc"][value="0"], input[id*="SinDoc"]',
-        )
-        .or(frameOrPage.getByText('Sin Documento', { exact: false }))
-        .first();
-      if (await rdoSinDoc.isVisible({ timeout: 800 }).catch(() => false)) {
-        await rdoSinDoc.check().catch(() => {});
-      }
-
-      // B) Combo Dojo / Select de Tipo de Documento:
-      const comboTipoDoc = frameOrPage
-        .locator('[id="inicio.tipoDocumento"]')
-        .first();
-      const flechaCombo = frameOrPage.locator('.dijitReset.dijitRight').first();
-
-      let opcionSeleccionada = false;
-
-      // Intentar primero con la API de Dojo directamente para mayor rapidez y precisión
-      try {
-        opcionSeleccionada = await frameOrPage.evaluate(() => {
+    // B) Actualizar el widget ComboBox / FilteringSelect de Dojo directamente
+    try {
+      const widgetActualizado = await frameOrPage.evaluate(
+        ({ targetText, targetVal }) => {
           interface DojoItem {
             name?: string;
             label?: string;
@@ -1060,24 +1086,32 @@ export class SunatSolBotService {
           interface DojoWidget {
             store?: { data?: DojoItem[] };
             set: (prop: string, val: unknown) => void;
-            get: (prop: string) => unknown;
+            get: (prop: string) => string | number | undefined;
             onChange?: (val: unknown) => void;
           }
           interface WindowWithDojo extends Window {
             dijit?: {
               byId: (id: string) => DojoWidget | undefined;
+              popup?: { close: (w?: unknown) => void };
             };
           }
           const win = window as unknown as WindowWithDojo;
           if (win.dijit) {
             const widget = win.dijit.byId('inicio.tipoDocumento');
             if (widget) {
-              if (widget.store && widget.store.data) {
-                const item = widget.store.data.find((d: DojoItem) =>
-                  /sin documento|sin doc|doc\.trib|varios|ninguno/i.test(
-                    String(d.name || d.label || d.descripcion || d.id || ''),
-                  ),
-                );
+              if (widget.store?.data) {
+                const item = widget.store.data.find((d: DojoItem) => {
+                  const dText = String(
+                    d.name || d.label || d.descripcion || '',
+                  ).toUpperCase();
+                  const dId = String(
+                    d.id !== undefined ? d.id : (d.value ?? ''),
+                  );
+                  return (
+                    dText.includes(targetText.toUpperCase()) ||
+                    dId === targetVal
+                  );
+                });
                 if (item) {
                   widget.set(
                     'value',
@@ -1085,198 +1119,357 @@ export class SunatSolBotService {
                   );
                   widget.set(
                     'displayedValue',
-                    item.name || item.label || 'SIN DOCUMENTO',
+                    item.name || item.label || targetText,
                   );
-                  if (widget.onChange) widget.onChange(widget.get('value'));
+                  widget.onChange?.(widget.get('value'));
+                  if (win.dijit.popup?.close) win.dijit.popup.close(widget);
                   return true;
                 }
               }
-              widget.set('displayedValue', 'SIN DOCUMENTO');
+              widget.set('value', targetVal);
+              widget.set('displayedValue', targetText);
+              widget.onChange?.(widget.get('value'));
+              if (win.dijit.popup?.close) win.dijit.popup.close(widget);
+              return true;
             }
           }
           return false;
-        });
-      } catch {
-        // Ignorar fallo al interactuar con widget Dojo
-      }
+        },
+        { targetText: nombreOpcion, targetVal: codigoDoc },
+      );
+      if (widgetActualizado) docSeleccionado = true;
+    } catch {
+      // Ignorar fallo al interactuar con Dojo
+    }
 
-      if (
-        !opcionSeleccionada &&
-        (await comboTipoDoc.isVisible({ timeout: 1500 }).catch(() => false))
-      ) {
-        try {
-          await comboTipoDoc.click().catch(() => {});
-
-          const optSinDoc = frameOrPage
-            .locator(
-              '.dijitMenuItem, [role="option"], tr.dijitMenuItem, div.dijitMenuItem',
-            )
-            .filter({ hasText: /sin documento|sin doc|varios|doc\.trib/i })
+    // C) Si aún no fue seleccionado, desplegar e interactuar con Playwright
+    if (!docSeleccionado) {
+      const comboTipoDoc = frameOrPage
+        .locator('[id="inicio.tipoDocumento"]')
+        .first();
+      const flechaCombo = frameOrPage.locator('.dijitReset.dijitRight').first();
+      if (await comboTipoDoc.isVisible({ timeout: 1500 }).catch(() => false)) {
+        await comboTipoDoc.click({ force: true }).catch(() => {});
+        const opt = frameOrPage
+          .locator('.dijitMenuItem, [role="option"]')
+          .filter({ hasText: nombreOpcion })
+          .first();
+        if (await opt.isVisible({ timeout: 1000 }).catch(() => false)) {
+          await opt.click({ force: true }).catch(() => {});
+          docSeleccionado = true;
+        } else if (
+          await flechaCombo.isVisible({ timeout: 600 }).catch(() => false)
+        ) {
+          await flechaCombo.click({ force: true }).catch(() => {});
+          const opt2 = frameOrPage
+            .locator('.dijitMenuItem, [role="option"]')
+            .filter({ hasText: nombreOpcion })
             .first();
-
-          if (await optSinDoc.isVisible({ timeout: 1000 }).catch(() => false)) {
-            await optSinDoc.click().catch(() => {});
-            opcionSeleccionada = true;
-          } else if (
-            await flechaCombo.isVisible({ timeout: 800 }).catch(() => false)
-          ) {
-            await flechaCombo.click().catch(() => {});
-            const optSinDoc2 = frameOrPage
-              .locator(
-                '.dijitMenuItem, [role="option"], tr.dijitMenuItem, div.dijitMenuItem',
-              )
-              .filter({ hasText: /sin documento|sin doc|varios|doc\.trib/i })
-              .first();
-            if (
-              await optSinDoc2.isVisible({ timeout: 800 }).catch(() => false)
-            ) {
-              await optSinDoc2.click().catch(() => {});
-              opcionSeleccionada = true;
-            }
-          }
-        } catch {
-          // Ignorar fallo al desplegar opciones de combo
-        }
-
-        // Fallback: escribir directamente "SIN DOCUMENTO" en el combo
-        if (!opcionSeleccionada) {
-          try {
-            await comboTipoDoc.click().catch(() => {});
-            await page.keyboard.press('Control+A').catch(() => {});
-            await page.keyboard.press('Backspace').catch(() => {});
-            await comboTipoDoc.fill('SIN DOCUMENTO').catch(() => {});
-            await page.keyboard.press('Enter').catch(() => {});
-          } catch {
-            // Ignorar fallo al escribir en combo
+          if (await opt2.isVisible({ timeout: 800 }).catch(() => false)) {
+            await opt2.click({ force: true }).catch(() => {});
+            docSeleccionado = true;
           }
         }
       }
+    }
 
-      // Fallback selector HTML nativo <select> si aplica
-      const selectTipoDoc = frameOrPage
-        .locator('select[name*="tipoDocumento"], select[id*="tipoDocumento"]')
-        .first();
-      if (await selectTipoDoc.isVisible({ timeout: 800 }).catch(() => false)) {
-        await selectTipoDoc
-          .selectOption({ label: 'SIN DOCUMENTO' })
-          .catch(async () => {
-            await selectTipoDoc.selectOption({ value: '0' }).catch(() => {});
-          });
-      }
+    // Cerrar cualquier menú flotante residual para no interceptar los siguientes clicks
+    await page.keyboard.press('Escape').catch(() => {});
 
-      // C) Campo número de documento: DEBE estar completamente vacío
-      const inputNumDoc = frameOrPage
-        .locator(
-          '[id="inicio.numeroDocumento"], #txtNumDoc, #numDoc, input[name*="numDoc"]',
-        )
-        .first();
-      if (await inputNumDoc.isVisible({ timeout: 1000 }).catch(() => false)) {
+    // -------------------------------------------------------------------------
+    // 2. RELLENAR LOS DATOS (NÚMERO DE DOCUMENTO Y "CLIENTE GENERAL" O DATOS)
+    // -------------------------------------------------------------------------
+    this.logger.debug(
+      `[Paso 2] Rellenando datos (${esSinDoc ? 'SIN DOCUMENTO' : `Doc: ${numDoc}`})...`,
+    );
+
+    const inputNumDoc = frameOrPage
+      .locator(
+        '[id="inicio.numeroDocumento"], #txtNumDoc, #numDoc, input[name*="numDoc"]',
+      )
+      .first();
+
+    if (esSinDoc) {
+      // 2.A: Si es SIN DOCUMENTO:
+      // a) Asegurar que el número de documento esté COMPLETAMENTE VACÍO
+      if (await inputNumDoc.isVisible({ timeout: 600 }).catch(() => false)) {
+        await inputNumDoc.click({ force: true }).catch(() => {});
         await inputNumDoc.fill('').catch(() => {});
       }
       try {
         await frameOrPage.evaluate(() => {
-          interface DojoWidget {
-            set: (prop: string, val: unknown) => void;
-          }
           interface WindowWithDojo extends Window {
             dijit?: {
-              byId: (id: string) => DojoWidget | undefined;
+              byId: (
+                id: string,
+              ) => { set: (p: string, v: unknown) => void } | undefined;
             };
           }
           const win = window as unknown as WindowWithDojo;
-          if (win.dijit) {
-            win.dijit.byId('inicio.numeroDocumento')?.set('value', '');
-          }
+          win.dijit?.byId('inicio.numeroDocumento')?.set('value', '');
           const el = document.getElementById(
             'inicio.numeroDocumento',
           ) as HTMLInputElement | null;
           if (el) el.value = '';
         });
       } catch {
-        // Ignorar fallo al limpiar input de documento
+        // Ignorar
+      }
+
+      // b) Llenar como "CLIENTE GENERAL" en Apellidos y Nombres / Razón Social
+      const nombreClienteGeneral = 'CLIENTE GENERAL';
+      this.logger.debug(
+        `[Paso 2] Consignando "${nombreClienteGeneral}" para emisión sin documento...`,
+      );
+
+      // DOM directo para máxima velocidad y fiabilidad
+      try {
+        await frameOrPage.evaluate((nombreVal) => {
+          interface WindowWithDojo extends Window {
+            dijit?: {
+              byId: (
+                id: string,
+              ) => { set: (p: string, v: unknown) => void } | undefined;
+            };
+          }
+          const win = window as unknown as WindowWithDojo;
+          const posiblesIds = [
+            'inicio.razonSocial',
+            'inicio.nombre',
+            'inicio.denominacion',
+            'inicio.apellidosNombres',
+            'inicio.nombreCliente',
+            'txtRazonSocial',
+            'txtNombre',
+            'razonSocial',
+          ];
+          for (const id of posiblesIds) {
+            const el = document.getElementById(id) as HTMLInputElement | null;
+            if (el && !el.disabled && el.type !== 'hidden') {
+              el.value = nombreVal;
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              win.dijit?.byId(id)?.set('value', nombreVal);
+              return;
+            }
+          }
+          const rows = Array.from(document.querySelectorAll('tr'));
+          for (const tr of rows) {
+            const text = tr.textContent || '';
+            if (
+              /Apellidos y Nombres|Denominaci[oó]n|Raz[oó]n Social/i.test(text)
+            ) {
+              const inp = tr.querySelector<HTMLInputElement>(
+                'input[type="text"], input:not([type="radio"]):not([type="hidden"]):not([type="checkbox"])',
+              );
+              if (inp && !inp.disabled) {
+                inp.value = nombreVal;
+                inp.dispatchEvent(new Event('input', { bubbles: true }));
+                inp.dispatchEvent(new Event('change', { bubbles: true }));
+                if (inp.id) win.dijit?.byId(inp.id)?.set('value', nombreVal);
+                return;
+              }
+            }
+          }
+        }, nombreClienteGeneral);
+      } catch {
+        // Ignorar
+      }
+
+      // Playwright locator para emular foco y eventos reales
+      try {
+        const inputNombre = frameOrPage
+          .locator(
+            'tr:has-text("Apellidos y Nombres") input[type="text"], tr:has-text("Razón Social") input[type="text"], [id="inicio.razonSocial"], [id="inicio.nombre"], [id="inicio.apellidosNombres"], input[name*="razonSocial"], input[name*="nombre"]',
+          )
+          .filter({ visible: true })
+          .first();
+        if (await inputNombre.isVisible({ timeout: 1000 }).catch(() => false)) {
+          await inputNombre.click({ force: true }).catch(() => {});
+          await page.keyboard.press('Control+A').catch(() => {});
+          await page.keyboard.press('Backspace').catch(() => {});
+          await inputNombre.fill(nombreClienteGeneral).catch(() => {});
+          await page.keyboard.press('Tab').catch(() => {});
+        }
+      } catch {
+        // Ignorar
       }
     } else {
-      // 1. Selector de Tipo de Documento en portal SOL (Dojo / iframeApplication)
-      const comboTipoDoc = frameOrPage
-        .locator('[id="inicio.tipoDocumento"]')
-        .first();
-      const flechaCombo = frameOrPage.locator('.dijitReset.dijitRight').first();
-
-      if (await comboTipoDoc.isVisible({ timeout: 2500 }).catch(() => false)) {
-        await comboTipoDoc.click().catch(() => {});
-
-        const opt = frameOrPage
-          .getByRole('option', { name: nombreOpcion })
-          .or(
-            frameOrPage
-              .locator('.dijitMenuItem, [role="option"]')
-              .filter({ hasText: nombreOpcion }),
-          )
-          .first();
-        if (await opt.isVisible({ timeout: 1200 }).catch(() => false)) {
-          await opt.click();
-        } else if (
-          await flechaCombo.isVisible({ timeout: 800 }).catch(() => false)
-        ) {
-          await flechaCombo.click().catch(() => {});
-          await frameOrPage
-            .getByRole('option', { name: nombreOpcion })
-            .or(
-              frameOrPage
-                .locator('.dijitMenuItem, [role="option"]')
-                .filter({ hasText: nombreOpcion }),
-            )
-            .first()
-            .click()
-            .catch(() => {});
-        }
-      } else {
-        // Fallback selector legacy por radio button
-        if (tipoDoc === '1' && numDoc) {
-          const rdoDni = frameOrPage
-            .locator(
-              'input[value="1"], #rdoDni, input[name*="tipoDoc"][value="1"]',
-            )
-            .first();
-          if (await rdoDni.isVisible({ timeout: 1000 }).catch(() => false)) {
-            await rdoDni.check();
-          }
-        } else if (tipoDoc === '6' && numDoc) {
-          const rdoRuc = frameOrPage
-            .locator(
-              'input[value="6"], #rdoRuc, input[name*="tipoDoc"][value="6"]',
-            )
-            .first();
-          if (await rdoRuc.isVisible({ timeout: 1000 }).catch(() => false)) {
-            await rdoRuc.check();
-          }
-        }
-      }
-
-      // 2. Número de documento
+      // 2.B: Si es con DNI o RUC (o documento extranjero):
+      // a) Escribir el número de documento
       if (numDoc) {
-        const inputNumDoc = frameOrPage
-          .locator(
-            '[id="inicio.numeroDocumento"], #txtNumDoc, #numDoc, input[name*="numDoc"]',
-          )
-          .first();
-        if (await inputNumDoc.isVisible({ timeout: 2000 }).catch(() => false)) {
-          await inputNumDoc.click();
-          await inputNumDoc.fill(numDoc);
-          await page.keyboard.press('Tab');
+        if (await inputNumDoc.isVisible({ timeout: 1500 }).catch(() => false)) {
+          await inputNumDoc.click({ force: true }).catch(() => {});
+          await inputNumDoc.fill(numDoc).catch(() => {});
+          await page.keyboard.press('Tab').catch(() => {});
+        }
+        try {
+          await frameOrPage.evaluate((docVal) => {
+            interface WindowWithDojo extends Window {
+              dijit?: {
+                byId: (
+                  id: string,
+                ) => { set: (p: string, v: unknown) => void } | undefined;
+              };
+            }
+            const win = window as unknown as WindowWithDojo;
+            win.dijit?.byId('inicio.numeroDocumento')?.set('value', docVal);
+            const el = document.getElementById(
+              'inicio.numeroDocumento',
+            ) as HTMLInputElement | null;
+            if (el) {
+              el.value = docVal;
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          }, numDoc);
+        } catch {
+          // Ignorar
+        }
+      }
+
+      // b) SUNAT suele autocompletar la razón social con el DNI o RUC.
+      // Si se indicó un nombre explícito en params o si el campo sigue vacío tras la consulta, completarlo.
+      const rawNombre = (params.receptor?.razonSocialODatos || '').trim();
+      const nombreAUsar =
+        rawNombre && rawNombre !== '-' && rawNombre !== '0'
+          ? rawNombre
+          : 'CLIENTE GENERAL';
+
+      // Espera de 400ms para autocompletado nativo de RENIEC/SUNAT
+      await page.waitForTimeout(400);
+
+      const nombreActual = await frameOrPage
+        .evaluate(() => {
+          const ids = [
+            'inicio.razonSocial',
+            'inicio.nombre',
+            'inicio.denominacion',
+            'inicio.apellidosNombres',
+          ];
+          for (const id of ids) {
+            const el = document.getElementById(id) as HTMLInputElement | null;
+            if (el && el.value) return el.value.trim();
+          }
+          return '';
+        })
+        .catch(() => '');
+
+      if (!nombreActual) {
+        this.logger.debug(
+          `[Paso 2] Consignando nombre del cliente: "${nombreAUsar}"...`,
+        );
+        try {
+          await frameOrPage.evaluate((nombreVal) => {
+            interface WindowWithDojo extends Window {
+              dijit?: {
+                byId: (
+                  id: string,
+                ) => { set: (p: string, v: unknown) => void } | undefined;
+              };
+            }
+            const win = window as unknown as WindowWithDojo;
+            const posiblesIds = [
+              'inicio.razonSocial',
+              'inicio.nombre',
+              'inicio.denominacion',
+              'inicio.apellidosNombres',
+              'inicio.nombreCliente',
+              'txtRazonSocial',
+              'txtNombre',
+              'razonSocial',
+            ];
+            for (const id of posiblesIds) {
+              const el = document.getElementById(id) as HTMLInputElement | null;
+              if (el && !el.disabled && el.type !== 'hidden') {
+                el.value = nombreVal;
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                win.dijit?.byId(id)?.set('value', nombreVal);
+                return;
+              }
+            }
+          }, nombreAUsar);
+        } catch {
+          // Ignorar
+        }
+
+        try {
+          const inputNombre = frameOrPage
+            .locator(
+              'tr:has-text("Apellidos y Nombres") input[type="text"], tr:has-text("Razón Social") input[type="text"], [id="inicio.razonSocial"], [id="inicio.nombre"], [id="inicio.apellidosNombres"]',
+            )
+            .filter({ visible: true })
+            .first();
+          if (
+            await inputNombre.isVisible({ timeout: 800 }).catch(() => false)
+          ) {
+            await inputNombre.click({ force: true }).catch(() => {});
+            await inputNombre.fill(nombreAUsar).catch(() => {});
+            await page.keyboard.press('Tab').catch(() => {});
+          }
+        } catch {
+          // Ignorar
         }
       }
     }
 
-    // 3. Moneda (si aplica)
+    // -------------------------------------------------------------------------
+    // 3. SELECCIONAR LA MONEDA (SOLES / PEN)
+    // -------------------------------------------------------------------------
+    const monedaNombre = params.moneda === 'USD' ? 'DOLARES' : 'SOLES';
+    this.logger.debug(`[Paso 3] Seleccionando moneda: "${monedaNombre}"...`);
+
     const selectMoneda = frameOrPage
-      .locator('select[name*="moneda"], #cmbMoneda')
+      .locator(
+        'select[name*="moneda"], #cmbMoneda, select[id*="tipoMoneda"], select[id*="moneda"], tr:has-text("Tipo de Moneda") select',
+      )
       .first();
-    if (await selectMoneda.isVisible({ timeout: 800 }).catch(() => false)) {
-      await selectMoneda.selectOption({ label: 'SOLES' }).catch(() => {});
+    if (await selectMoneda.isVisible({ timeout: 600 }).catch(() => false)) {
+      await selectMoneda
+        .selectOption({ label: monedaNombre })
+        .catch(async () => {
+          await selectMoneda
+            .selectOption({ value: params.moneda === 'USD' ? 'USD' : 'PEN' })
+            .catch(() => {});
+        });
     }
 
-    // 4. Continuar al siguiente paso reactivamente
+    try {
+      await frameOrPage.evaluate((textoMoneda) => {
+        interface WindowWithDojo extends Window {
+          dijit?: {
+            byId: (id: string) =>
+              | {
+                  set: (p: string, v: unknown) => void;
+                  onChange?: (v: unknown) => void;
+                }
+              | undefined;
+          };
+        }
+        const win = window as unknown as WindowWithDojo;
+        const w =
+          win.dijit?.byId('inicio.tipoMoneda') ||
+          win.dijit?.byId('inicio.moneda');
+        if (w) {
+          w.set('displayedValue', textoMoneda);
+          w.onChange?.(textoMoneda);
+        }
+      }, monedaNombre);
+    } catch {
+      // Ignorar
+    }
+
+    // Asegurar que no quede ningún menú emergente abierto antes de presionar Continuar
+    await page.keyboard.press('Escape').catch(() => {});
+
+    // -------------------------------------------------------------------------
+    // 4. PRESIONAR CONTINUAR (PARA AVANZAR A LA PANTALLA DE ÍTEMS)
+    // -------------------------------------------------------------------------
+    this.logger.debug(
+      '[Paso 4] Presionando Continuar para avanzar a la pantalla de ítems...',
+    );
+
     const esItemsVisible = async (): Promise<boolean> => {
       const btn = frameOrPage
         .getByRole('button', { name: 'Adicionar' })
@@ -1307,7 +1500,7 @@ export class SunatSolBotService {
     for (let c = 0; c < 3; c++) {
       if (await esItemsVisible()) {
         this.logger.debug(
-          'Pantalla de ítems ya visible. Deteniendo Continuar de receptor.',
+          'Pantalla de ítems ya visible. Paso 1 completado con éxito.',
         );
         break;
       }
@@ -1316,19 +1509,38 @@ export class SunatSolBotService {
         .getByRole('button', { name: 'Continuar' })
         .or(
           frameOrPage.locator(
-            'button:has-text("Continuar"), input[value="Continuar"], #btnContinuar',
+            'button:has-text("Continuar"), input[value*="Continuar"], a:has-text("Continuar"), #btnContinuar, [id*="btnContinuar"], [id*="Continuar"]',
           ),
         )
         .filter({ visible: true })
         .first();
 
-      if (await btnContinuar.isVisible({ timeout: 2500 }).catch(() => false)) {
-        this.logger.debug(`Presionando Continuar (paso receptor ${c + 1})...`);
-        await btnContinuar.click().catch(() => {});
+      if (await btnContinuar.isVisible({ timeout: 2000 }).catch(() => false)) {
+        this.logger.debug(`Presionando Continuar (intento ${c + 1})...`);
+        await page.keyboard.press('Escape').catch(() => {});
+        await btnContinuar.click({ force: true }).catch(() => {});
+        await frameOrPage
+          .evaluate(() => {
+            const btns = Array.from(
+              document.querySelectorAll(
+                'button, input[type="button"], input[type="submit"], a, span.btn, div.btn',
+              ),
+            );
+            const btn = btns.find((el) => {
+              const t = (
+                el.textContent ||
+                (el as HTMLInputElement).value ||
+                ''
+              ).trim();
+              return /continuar/i.test(t);
+            });
+            if (btn) (btn as HTMLElement).click();
+          })
+          .catch(() => {});
 
         // Esperar reactivamente a que aparezca la pantalla de ítems o algún diálogo modal de confirmación
         const inicioEspera = Date.now();
-        while (Date.now() - inicioEspera < 5000) {
+        while (Date.now() - inicioEspera < 4000) {
           if (await esItemsVisible()) {
             break;
           }
@@ -1342,7 +1554,7 @@ export class SunatSolBotService {
             await modalInFrame.isVisible({ timeout: 100 }).catch(() => false)
           ) {
             this.logger.log('Aceptando modal de confirmación en frame');
-            await modalInFrame.click().catch(() => {});
+            await modalInFrame.click({ force: true }).catch(() => {});
           } else {
             const modalInPage = page
               .locator(modalUnionSelector)
@@ -1352,7 +1564,7 @@ export class SunatSolBotService {
               await modalInPage.isVisible({ timeout: 100 }).catch(() => false)
             ) {
               this.logger.log('Aceptando modal de confirmación en página');
-              await modalInPage.click().catch(() => {});
+              await modalInPage.click({ force: true }).catch(() => {});
             }
           }
 
@@ -1382,6 +1594,14 @@ export class SunatSolBotService {
       this.logger.debug(
         `Insertando ítem ${index + 1}/${params.items.length}: ${item.descripcion} (S/ ${item.precioUnitario})...`,
       );
+      params.onProgreso?.({
+        paso: 5,
+        totalPasos: 7,
+        etapa: 'ITEMS',
+        titulo: `Adicionando Producto (${index + 1}/${params.items.length})`,
+        descripcion: `${item.descripcion} (Cant: ${item.cantidad} - S/ ${item.precioUnitario.toFixed(2)})`,
+        porcentaje: Math.round(62 + ((index + 1) / params.items.length) * 22),
+      });
 
       // 1. Clic en "Adicionar" sobre la tabla de ítems
       const btnAdicionar = frameOrPage
@@ -2253,16 +2473,40 @@ export class SunatSolBotService {
    * Retorna el frame de trabajo correspondiente a 'iframeApplication' de SUNAT SOL.
    */
   private async obtenerFrameTrabajo(page: Page): Promise<Frame | Page> {
-    // 1. Intentar el iframe oficial de SEE-SOL SUNAT identificado en las sesiones reales
+    // 1. Prioridad: Buscar en todos los frames cuál contiene los elementos reales del formulario SOL
+    for (const frame of page.frames()) {
+      try {
+        const tieneFormulario = await frame.evaluate(() => {
+          return !!(
+            document.getElementById('inicio.tipoDocumento') ||
+            document.getElementById('inicio.numeroDocumento') ||
+            document.querySelector('[id*="tipoDocumento"]') ||
+            document.querySelector(
+              'button[id*="Continuar"], input[value*="Continuar"]',
+            )
+          );
+        });
+        if (tieneFormulario) {
+          return frame;
+        }
+      } catch {
+        // Frame puede estar en otro origen o en proceso de navegación
+      }
+    }
+
+    // 2. Intentar el iframe oficial de SEE-SOL SUNAT por nombre
     const frameApp = page.frame({ name: 'iframeApplication' });
     if (frameApp) {
       return frameApp;
     }
 
-    // 2. Esperar si aún está cargando el elemento iframe
+    // 3. Esperar si aún está cargando el elemento iframe en el DOM
     try {
       const frameEl = await page
-        .waitForSelector('iframe[name="iframeApplication"]', { timeout: 2500 })
+        .waitForSelector(
+          'iframe[name="iframeApplication"], iframe#iframeApplication',
+          { timeout: 2500 },
+        )
         .catch(() => null);
       if (frameEl) {
         const content = await frameEl.contentFrame();
@@ -2272,13 +2516,15 @@ export class SunatSolBotService {
       // Ignorar timeout de selector iframe
     }
 
-    // 3. Buscar en todos los frames por nombre o URL conocida
+    // 4. Buscar en todos los frames por nombre o URL conocida
     for (const frame of page.frames()) {
       const name = frame.name();
       const url = frame.url();
       if (
         name === 'iframeApplication' ||
         url.includes('iframeApplication') ||
+        url.includes('action=execute') ||
+        url.includes('11.5.4.1.1') ||
         url.includes('ol-ti-itemision') ||
         url.includes('ebp') ||
         url.includes('itemision')

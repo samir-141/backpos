@@ -130,7 +130,7 @@ export class SunatSolEmissionProvider implements IEmissionProvider {
       razonSocialODatos:
         comprobante.cliente_razon_social ||
         comprobante.cliente_nombre ||
-        (esSinDoc ? 'CLIENTES VARIOS' : undefined),
+        'CLIENTE GENERAL',
       direccion: comprobante.cliente_direccion || undefined,
     };
 
