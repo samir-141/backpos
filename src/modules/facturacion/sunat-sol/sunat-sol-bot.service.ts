@@ -196,7 +196,6 @@ export class SunatSolBotService {
         browser = await this.lanzarNavegador(isHeadless);
         context = await browser.newContext({
           viewport: { width: 1366, height: 768 },
-          acceptDownloads: true,
           userAgent:
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         });
@@ -283,14 +282,6 @@ export class SunatSolBotService {
         });
         const resultadoEmision = await this.confirmarYEmitirBoleta(page);
 
-        // 7. Descarga o generación de PDF
-        const pdfBuffer =
-          resultadoEmision.pdfBuffer ||
-          (await this.obtenerPdfComprobante(
-            page,
-            resultadoEmision.numeroComprobante,
-          ));
-
         params.onProgreso?.({
           paso: 7,
           totalPasos: 7,
@@ -311,8 +302,6 @@ export class SunatSolBotService {
           serie: resultadoEmision.serie,
           correlativo: resultadoEmision.correlativo,
           fechaEmision: new Date().toISOString(),
-          pdfBuffer,
-          pdfBase64: pdfBuffer ? pdfBuffer.toString('base64') : undefined,
           mensajeRespuesta:
             'Boleta de Venta Electrónica emitida exitosamente en SUNAT SEE-SOL',
           duracionMs,
@@ -2009,7 +1998,6 @@ export class SunatSolBotService {
     numeroComprobante: string;
     serie: string;
     correlativo: number;
-    pdfBuffer?: Buffer;
   }> {
     this.logger.debug('Confirmando emisión en preliminar de comprobante...');
     const frameOrPage = await this.obtenerFrameTrabajo(page);
@@ -2027,10 +2015,6 @@ export class SunatSolBotService {
     await btnEmitir.click();
 
     // 2. Diálogo de confirmación: "¿Está seguro de emitir...?" -> Clic en "Aceptar"
-    const downloadPromise = page
-      .waitForEvent('download', { timeout: 8000 })
-      .catch(() => null);
-
     let btnConfirmarAceptar = frameOrPage
       .getByRole('button', { name: 'Aceptar' })
       .or(
@@ -2063,69 +2047,7 @@ export class SunatSolBotService {
       await btnConfirmarAceptar.click();
     }
 
-    // 3. Esperar posible descarga automática disparada por el modal
-    let downloadedPdfBuffer: Buffer | undefined;
-    const download = await downloadPromise;
-    if (download) {
-      try {
-        const downloadPath = await download.path();
-        if (downloadPath) {
-          const fsPromises = await import('fs/promises');
-          downloadedPdfBuffer = await fsPromises.readFile(downloadPath);
-        }
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.logger.debug(
-          `No se pudo leer archivo de descarga directa: ${msg}`,
-        );
-      }
-    }
-
-    // 4. Si aparece el botón explícito "Descargar PDF", intentar usarlo si aún no tenemos el PDF
-    if (!downloadedPdfBuffer) {
-      let btnDescargarPdf = frameOrPage
-        .getByRole('button', { name: 'Descargar PDF' })
-        .or(
-          frameOrPage.locator(
-            'button:has-text("Descargar PDF"), a:has-text("Descargar PDF")',
-          ),
-        )
-        .filter({ visible: true })
-        .first();
-
-      if (
-        !(await btnDescargarPdf.isVisible({ timeout: 1500 }).catch(() => false))
-      ) {
-        btnDescargarPdf = page
-          .getByRole('button', { name: 'Descargar PDF' })
-          .or(
-            page.locator(
-              'button:has-text("Descargar PDF"), a:has-text("Descargar PDF")',
-            ),
-          )
-          .filter({ visible: true })
-          .first();
-      }
-
-      if (
-        await btnDescargarPdf.isVisible({ timeout: 2500 }).catch(() => false)
-      ) {
-        const manualDownloadPromise = page
-          .waitForEvent('download', { timeout: 5000 })
-          .catch(() => null);
-        await btnDescargarPdf.click().catch(() => {});
-        const manualDownload = await manualDownloadPromise;
-        if (manualDownload) {
-          const manualPath = await manualDownload.path();
-          if (manualPath) {
-            const fsPromises = await import('fs/promises');
-            downloadedPdfBuffer = await fsPromises.readFile(manualPath);
-          }
-        }
-      }
-    }
-
-    // 5. Monitoreo reactivo del número de comprobante emitido (ej. "EB01-00000452")
+    // 3. Monitoreo reactivo del número de comprobante emitido (ej. "EB01-00000452")
     let numeroComprobante = '';
     let serie = 'EB01';
     let correlativo = 0;
@@ -2160,47 +2082,7 @@ export class SunatSolBotService {
       numeroComprobante,
       serie,
       correlativo,
-      pdfBuffer: downloadedPdfBuffer,
     };
-  }
-
-  /**
-   * Descarga el PDF del comprobante emitido o lo genera vía print/pdf del frame.
-   */
-  private async obtenerPdfComprobante(
-    page: Page,
-    numeroComprobante: string,
-  ): Promise<Buffer | undefined> {
-    try {
-      this.logger.debug(`Obteniendo PDF de comprobante: ${numeroComprobante}`);
-      const btnDescargar = page
-        .locator(
-          'button:has-text("Descargar"), a:has-text("Descargar PDF"), button:has-text("Imprimir")',
-        )
-        .first();
-
-      if (await btnDescargar.isVisible({ timeout: 2000 }).catch(() => false)) {
-        const downloadPromise = page
-          .waitForEvent('download', { timeout: 6000 })
-          .catch(() => null);
-        await btnDescargar.click().catch(() => {});
-        const download = await downloadPromise;
-        if (download) {
-          const path = await download.path();
-          if (path) {
-            const fsPromises = await import('fs/promises');
-            return await fsPromises.readFile(path);
-          }
-        }
-      }
-
-      // Fallback: renderizar página / comprobante a PDF
-      return await page.pdf({ format: 'A4', printBackground: true });
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`No se pudo generar PDF directo de SUNAT SOL: ${msg}`);
-      return undefined;
-    }
   }
 
   /**
