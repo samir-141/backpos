@@ -39,6 +39,24 @@ export interface EmitirBoletaSolParams {
   observaciones?: string;
   timeoutMs?: number;
   headless?: boolean;
+  onProgreso?: (progreso: ProgresoEmisionSol) => void;
+}
+
+export interface ProgresoEmisionSol {
+  paso: number;
+  totalPasos: number;
+  etapa:
+    | 'INICIO'
+    | 'LOGIN'
+    | 'NAVEGACION'
+    | 'RECEPTOR'
+    | 'ITEMS'
+    | 'PRELIMINAR'
+    | 'EMITIDO'
+    | 'ERROR';
+  titulo: string;
+  descripcion: string;
+  porcentaje: number;
 }
 
 export interface ResultadoBoletaSol {

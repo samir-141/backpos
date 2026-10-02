@@ -26,9 +26,10 @@ import { StorageModule } from '../storage/storage.module';
 
 import { SunatSolBotService } from './sunat-sol/sunat-sol-bot.service';
 import { SunatSolEmissionProvider } from './sunat-sol/sunat-sol-emission.provider';
+import { EventsModule } from '../../socket/events.module';
 
 @Module({
-  imports: [PrismaModule, StorageModule],
+  imports: [PrismaModule, StorageModule, EventsModule],
   controllers: [
     FacturacionController,
     ConfiguracionTributariaController,

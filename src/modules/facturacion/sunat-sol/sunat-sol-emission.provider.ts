@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
   EmissionContext,
   EmissionResult,
@@ -9,6 +9,7 @@ import { ComprobanteStorageService } from '../storage/comprobante-storage.servic
 import { EncryptionService } from '../../../common/security/encryption.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { EstadoComprobante } from '../domain/estado-comprobante.enum';
+import { EventsGateway } from '../../../socket/events.gateway';
 
 @Injectable()
 export class SunatSolEmissionProvider implements IEmissionProvider {
@@ -20,6 +21,7 @@ export class SunatSolEmissionProvider implements IEmissionProvider {
     private readonly storage: ComprobanteStorageService,
     private readonly encryption: EncryptionService,
     private readonly prisma: PrismaService,
+    @Optional() private readonly eventsGateway?: EventsGateway,
   ) {}
 
   async emitir(ctx: EmissionContext): Promise<EmissionResult> {
@@ -181,12 +183,27 @@ export class SunatSolEmissionProvider implements IEmissionProvider {
         mapCodigoBarras.get(codOriginal.trim().toLowerCase()) ||
         codOriginal;
 
+      const rawPrecio =
+        det.precio_unitario ??
+        det.precio_unitario_presentacion ??
+        det.valor_unitario ??
+        det.precio ??
+        det.monto ??
+        (det.subtotal && det.cantidad
+          ? Number(det.subtotal) / Number(det.cantidad)
+          : undefined) ??
+        (det.total && det.cantidad
+          ? Number(det.total) / Number(det.cantidad)
+          : undefined) ??
+        0;
+      const precioUnitario = Number(rawPrecio) > 0 ? Number(rawPrecio) : 0;
+
       return {
         tipo: det.tipo_item === 'SERVICIO' ? 'SERVICIO' : 'BIEN',
         codigo: codigoBarras,
         descripcion: desc,
         cantidad: Number(det.cantidad || 1),
-        precioUnitario: Number(det.precio_unitario || det.monto || 0),
+        precioUnitario,
       };
     });
 
@@ -219,6 +236,28 @@ export class SunatSolEmissionProvider implements IEmissionProvider {
       items,
       observaciones: comprobante.observaciones || undefined,
       headless: ambiente !== 'DEVELOPMENT_DEBUG',
+      onProgreso: (progreso) => {
+        this.logger.debug(
+          `[Progreso SOL] Paso ${progreso.paso}/${progreso.totalPasos} (${progreso.porcentaje}%): ${progreso.titulo}`,
+        );
+        if (this.eventsGateway) {
+          const payload = {
+            botica_id: boticaId,
+            sucursal_id: comprobante.sucursal_id,
+            comprobante_id: comprobante.id,
+            venta_id: comprobante.venta_id,
+            ...progreso,
+          };
+          if (comprobante.sucursal_id) {
+            this.eventsGateway.emitirASucursal(
+              comprobante.sucursal_id,
+              'facturacion.progreso',
+              payload,
+            );
+          }
+          this.eventsGateway.emitirGlobal('facturacion.progreso', payload);
+        }
+      },
     });
 
     if (!resultado.exito) {
