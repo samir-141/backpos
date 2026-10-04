@@ -1043,9 +1043,14 @@ export class ProductosService {
       );
     }
 
+    const loteCalculado =
+      dto.numero_lote?.trim().toUpperCase() ||
+      (dto.fecha_vencimiento
+        ? `LOTE-${dto.fecha_vencimiento.slice(0, 10)}`
+        : '');
     const numeroLote = producto.controla_lote
-      ? dto.numero_lote?.trim().toUpperCase()
-      : dto.numero_lote?.trim().toUpperCase() || 'SIN-LOTE';
+      ? loteCalculado
+      : loteCalculado || 'SIN-LOTE';
     if (!numeroLote) {
       throw new BadRequestException(
         'El número de lote es obligatorio para este producto.',

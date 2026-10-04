@@ -281,7 +281,7 @@ describe('SunatSolBotService & SunatSolEmissionProvider', () => {
         receptor: expect.objectContaining({
           tipoDoc: '0',
           numeroDoc: undefined,
-          razonSocialODatos: 'CLIENTES VARIOS',
+          razonSocialODatos: 'CLIENTE GENERAL',
         }),
       }),
     );

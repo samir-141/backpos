@@ -2064,7 +2064,7 @@ export class SunatSolBotService {
         .first();
 
       if (
-        !(await btnAceptarItem.isVisible({ timeout: 1000 }).catch(() => false))
+        !(await btnAceptarItem.isVisible({ timeout: 800 }).catch(() => false))
       ) {
         btnAceptarItem = frameOrPage
           .getByRole('button', { name: 'Aceptar' })
@@ -2078,9 +2078,11 @@ export class SunatSolBotService {
       }
 
       this.logger.log(`Presionando botón Aceptar de ítem ${index + 1}...`);
-      await btnAceptarItem.click({ force: true }).catch(() => {});
+      await btnAceptarItem
+        .click({ force: true, timeout: 3000 })
+        .catch(() => {});
 
-      // Clic nativo DOM sobre el botón Aceptar en el modal
+      // Clic nativo DOM sobre el botón Aceptar en el modal como refuerzo
       const clicAceptarNativo = () => {
         const dlgs = document.querySelectorAll(
           '.dijitDialog, [role="dialog"], #modalItem',
@@ -2114,9 +2116,12 @@ export class SunatSolBotService {
         await page.evaluate(clicAceptarNativo).catch(() => {});
       }
 
-      // Esperar reactivamente a que se procese el ítem y se cierre el modal
+      // Esperar reactivamente a que se procese el ítem y se cierre el modal (o se agregue a la tabla)
       const inicioEsperaItem = Date.now();
-      while (Date.now() - inicioEsperaItem < 7000) {
+      let reintentoRealizado = false;
+      const descCorta = item.descripcion.slice(0, 15).trim();
+
+      while (Date.now() - inicioEsperaItem < 12000) {
         // ¿Apareció diálogo modal de confirmación / afectación tributaria?
         const dialogAfectacion = frameOrPage
           .locator('#dlgBtnAceptar, div:has-text("●Aceptar")')
@@ -2125,10 +2130,10 @@ export class SunatSolBotService {
         if (
           await dialogAfectacion.isVisible({ timeout: 100 }).catch(() => false)
         ) {
-          await dialogAfectacion.click().catch(() => {});
+          await dialogAfectacion.click({ timeout: 2000 }).catch(() => {});
           const radioOption = frameOrPage.getByRole('radio').first();
           if (
-            await radioOption.isVisible({ timeout: 600 }).catch(() => false)
+            await radioOption.isVisible({ timeout: 400 }).catch(() => false)
           ) {
             const isChecked = await radioOption.isChecked().catch(() => false);
             if (!isChecked) await radioOption.check().catch(() => {});
@@ -2138,35 +2143,47 @@ export class SunatSolBotService {
               .first();
             if (
               await btnAceptarDialogo
-                .isVisible({ timeout: 600 })
+                .isVisible({ timeout: 400 })
                 .catch(() => false)
             ) {
-              await btnAceptarDialogo.click().catch(() => {});
+              await btnAceptarDialogo.click({ timeout: 2000 }).catch(() => {});
             }
           }
         }
 
-        // Si el formulario de ítem ya no está visible, el ítem fue guardado con éxito
+        // Si el formulario de ítem ya no está visible o el producto ya se listó en la tabla
         const modalItemAunVisible = await dialogNuevoItem
           .isVisible({ timeout: 100 })
           .catch(() => false);
-        if (!modalItemAunVisible) {
+
+        const productoEnTabla = descCorta
+          ? await frameOrPage
+              .locator(`td:has-text("${descCorta}")`)
+              .first()
+              .isVisible({ timeout: 100 })
+              .catch(() => false)
+          : false;
+
+        if (!modalItemAunVisible || productoEnTabla) {
           this.logger.log(
             `Ítem ${index + 1} guardado correctamente en la tabla.`,
           );
           break;
         }
 
-        // Reintento: si transcurrieron 1.2s y el modal sigue visible, re-hacer clic en Aceptar
-        if (Date.now() - inicioEsperaItem > 1200) {
-          await btnAceptarItem.click({ force: true }).catch(() => {});
+        // Reintento controlado: sólo UNA vez si pasaron más de 4.5 segundos y el modal aún sigue abierto
+        if (!reintentoRealizado && Date.now() - inicioEsperaItem > 4500) {
+          reintentoRealizado = true;
+          this.logger.debug(
+            `Reintentando un único clic en Aceptar de ítem ${index + 1}...`,
+          );
+          await btnAceptarItem
+            .click({ force: true, timeout: 2500 })
+            .catch(() => {});
           await frameOrPage.evaluate(clicAceptarNativo).catch(() => {});
-          if (frameOrPage !== page) {
-            await page.evaluate(clicAceptarNativo).catch(() => {});
-          }
         }
 
-        await page.waitForTimeout(70);
+        await page.waitForTimeout(80);
       }
     }
 
@@ -2177,13 +2194,72 @@ export class SunatSolBotService {
       'Todos los ítems agregados con éxito. Presionando botón Continuar para avanzar...',
     );
 
-    for (let c = 0; c < 5; c++) {
+    const funcionAceptarModales = async (): Promise<boolean> => {
+      const modalUnionSelector = [
+        '.dijitDialog button:has-text("Aceptar")',
+        '.dijitDialog input[value="Aceptar"]',
+        '.dijitDialog span.dijitButtonText:has-text("Aceptar")',
+        '.dijitDialog button:has-text("Sí")',
+        '.dijitDialog button:has-text("Si")',
+        '.dijitDialog input[value="Sí"]',
+        '.dijitDialog input[value="Si"]',
+        '#dlgBtnAceptar',
+        '.dijitDialog [id*="btnAceptar" i]',
+        'button:has-text("Aceptar")',
+      ].join(', ');
+
+      for (const target of [frameOrPage, page]) {
+        const modalBtn = target
+          .locator(modalUnionSelector)
+          .filter({ visible: true })
+          .first();
+        if (await modalBtn.isVisible({ timeout: 150 }).catch(() => false)) {
+          this.logger.log(
+            'Diálogo modal / alerta detectado tras ítems, aceptando automáticamente...',
+          );
+          await modalBtn.click({ force: true, timeout: 2000 }).catch(() => {});
+          await target
+            .evaluate(() => {
+              const dlgs = document.querySelectorAll(
+                '.dijitDialog, [role="dialog"]',
+              );
+              for (const dlg of Array.from(dlgs)) {
+                if (window.getComputedStyle(dlg).display === 'none') continue;
+                const btns = Array.from(
+                  dlg.querySelectorAll<HTMLElement>(
+                    'button, input[type="button"], span.dijitButtonText',
+                  ),
+                );
+                for (const b of btns) {
+                  const t = (
+                    b.textContent ||
+                    (b as HTMLInputElement).value ||
+                    ''
+                  ).trim();
+                  if (/^(aceptar|s[íi]|continuar)$/i.test(t)) {
+                    b.click();
+                    return;
+                  }
+                }
+              }
+            })
+            .catch(() => {});
+          return true;
+        }
+      }
+      return false;
+    };
+
+    for (let c = 0; c < 6; c++) {
+      // 1. Revisar si hay un diálogo modal emergente (ej. ítems duplicados o advertencias de SUNAT)
+      await funcionAceptarModales();
+
       const btnEmitir = frameOrPage
         .getByRole('button', { name: 'Emitir' })
         .or(frameOrPage.locator('button:has-text("Emitir"), #btnEmitir'))
         .filter({ visible: true })
         .first();
-      if (await btnEmitir.isVisible({ timeout: 200 }).catch(() => false)) {
+      if (await btnEmitir.isVisible({ timeout: 250 }).catch(() => false)) {
         this.logger.debug('Pantalla preliminar (Emitir) ya visible.');
         break;
       }
@@ -2191,7 +2267,7 @@ export class SunatSolBotService {
       const txtObs = frameOrPage
         .locator('#txtObservaciones, textarea[name*="observacion"]')
         .first();
-      if (await txtObs.isVisible({ timeout: 200 }).catch(() => false)) {
+      if (await txtObs.isVisible({ timeout: 250 }).catch(() => false)) {
         this.logger.debug('Pantalla de observaciones ya visible.');
         break;
       }
@@ -2214,7 +2290,9 @@ export class SunatSolBotService {
         this.logger.log(
           `Presionando Continuar tras ítems (intento ${c + 1})...`,
         );
-        await btnContinuar.click({ force: true }).catch(() => {});
+        await btnContinuar
+          .click({ force: true, timeout: 3000 })
+          .catch(() => {});
       }
 
       // Clic DOM nativo como respaldo de Continuar
@@ -2243,10 +2321,11 @@ export class SunatSolBotService {
         await page.evaluate(fnClicContinuar).catch(() => {});
       }
 
-      // Esperar reactivamente a que la vista avance
+      // Esperar reactivamente a que la vista avance o aparezca un diálogo modal
       const inicioEsperaCont = Date.now();
       let avanzo = false;
-      while (Date.now() - inicioEsperaCont < 3000) {
+      while (Date.now() - inicioEsperaCont < 3500) {
+        await funcionAceptarModales();
         if (
           (await btnEmitir.isVisible({ timeout: 100 }).catch(() => false)) ||
           (await txtObs.isVisible({ timeout: 100 }).catch(() => false))
@@ -2291,6 +2370,21 @@ export class SunatSolBotService {
       }
     }
 
+    // Aceptar cualquier modal que pudiera haberse quedado abierto
+    const modalAceptarSelector = [
+      '.dijitDialog button:has-text("Aceptar")',
+      '.dijitDialog input[value="Aceptar"]',
+      '.dijitDialog span.dijitButtonText:has-text("Aceptar")',
+      '#dlgBtnAceptar',
+    ].join(', ');
+    const modalPrev = frameOrPage
+      .locator(modalAceptarSelector)
+      .filter({ visible: true })
+      .first();
+    if (await modalPrev.isVisible({ timeout: 200 }).catch(() => false)) {
+      await modalPrev.click({ force: true, timeout: 2000 }).catch(() => {});
+    }
+
     const btnContinuar = frameOrPage
       .getByRole('button', { name: /continuar/i })
       .or(
@@ -2302,7 +2396,7 @@ export class SunatSolBotService {
       .first();
 
     if (await btnContinuar.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await btnContinuar.click({ force: true }).catch(() => {});
+      await btnContinuar.click({ force: true, timeout: 3000 }).catch(() => {});
     }
 
     // Respaldo DOM nativo
@@ -2328,9 +2422,21 @@ export class SunatSolBotService {
       })
       .catch(() => {});
 
-    await btnEmitir
-      .waitFor({ state: 'visible', timeout: 15000 })
-      .catch(() => {});
+    // Esperar reactivamente a que Emitir aparezca o aceptar modal
+    const inicioWaitEmitir = Date.now();
+    while (Date.now() - inicioWaitEmitir < 12000) {
+      if (await btnEmitir.isVisible({ timeout: 150 }).catch(() => false)) {
+        break;
+      }
+      const modalWait = frameOrPage
+        .locator(modalAceptarSelector)
+        .filter({ visible: true })
+        .first();
+      if (await modalWait.isVisible({ timeout: 100 }).catch(() => false)) {
+        await modalWait.click({ force: true, timeout: 2000 }).catch(() => {});
+      }
+      await page.waitForTimeout(100);
+    }
   }
 
   /**
@@ -2343,51 +2449,131 @@ export class SunatSolBotService {
     correlativo: number;
   }> {
     this.logger.debug('Confirmando emisión en preliminar de comprobante...');
-    const frameOrPage = await this.obtenerFrameTrabajo(page);
 
-    // 1. Botón "Emitir"
-    const btnEmitir = frameOrPage
-      .getByRole('button', { name: 'Emitir' })
-      .or(
-        frameOrPage.locator(
-          'button:has-text("Emitir"), input[value="Emitir"], #btnEmitir',
-        ),
-      )
-      .first();
-    await btnEmitir.waitFor({ state: 'visible', timeout: 20000 });
-    await btnEmitir.click();
+    const inicioEsperaEmitir = Date.now();
+    const maxEsperaEmitir = 25000;
+    let emitirClickeado = false;
 
-    // 2. Diálogo de confirmación: "¿Está seguro de emitir...?" -> Clic en "Aceptar"
-    let btnConfirmarAceptar = frameOrPage
-      .getByRole('button', { name: 'Aceptar' })
-      .or(
-        frameOrPage.locator(
-          'button:has-text("Aceptar"), button:has-text("Sí"), button:has-text("Si"), #btnAceptar',
-        ),
-      )
-      .filter({ visible: true })
-      .first();
+    while (Date.now() - inicioEsperaEmitir < maxEsperaEmitir) {
+      const currentFrame = await this.obtenerFrameTrabajo(page);
 
-    if (
-      !(await btnConfirmarAceptar
-        .isVisible({ timeout: 1500 })
-        .catch(() => false))
-    ) {
-      btnConfirmarAceptar = page
-        .getByRole('button', { name: 'Aceptar' })
+      // Aceptar cualquier diálogo modal que pudiera bloquear la pantalla (ej. duplicados, avisos)
+      const modalAceptarSelector = [
+        '.dijitDialog button:has-text("Aceptar")',
+        '.dijitDialog input[value="Aceptar"]',
+        '.dijitDialog span.dijitButtonText:has-text("Aceptar")',
+        '#dlgBtnAceptar',
+        'button:has-text("Aceptar")',
+      ].join(', ');
+      const btnModal = currentFrame
+        .locator(modalAceptarSelector)
+        .filter({ visible: true })
+        .first();
+      if (await btnModal.isVisible({ timeout: 150 }).catch(() => false)) {
+        this.logger.log(
+          'Aceptando diálogo modal pendiente en pantalla preliminar/emisión...',
+        );
+        await btnModal.click({ force: true, timeout: 2000 }).catch(() => {});
+        await page.waitForTimeout(200);
+      }
+
+      // Botón "Emitir"
+      const btnEmitir = currentFrame
+        .getByRole('button', { name: 'Emitir' })
         .or(
-          page.locator(
-            'button:has-text("Aceptar"), button:has-text("Sí"), button:has-text("Si"), #btnAceptar',
+          currentFrame.locator(
+            'button:has-text("Emitir"), input[value="Emitir"], #btnEmitir',
           ),
         )
         .filter({ visible: true })
         .first();
+
+      if (await btnEmitir.isVisible({ timeout: 300 }).catch(() => false)) {
+        this.logger.log('Botón Emitir visible. Presionando Emitir...');
+        await btnEmitir.click({ timeout: 5000 }).catch(() => {});
+        emitirClickeado = true;
+        break;
+      }
+
+      // Si aún no está visible Emitir, verificar si la pantalla sigue en Observaciones o Ítems
+      const btnContinuar = currentFrame
+        .getByRole('button', { name: /continuar/i })
+        .or(
+          currentFrame.locator(
+            'button:has-text("Continuar"), input[value*="Continuar" i], #btnContinuar',
+          ),
+        )
+        .filter({ visible: true })
+        .first();
+
+      if (await btnContinuar.isVisible({ timeout: 200 }).catch(() => false)) {
+        this.logger.debug(
+          'Pantalla previa detectada, presionando Continuar hacia Preliminar...',
+        );
+        await btnContinuar
+          .click({ force: true, timeout: 3000 })
+          .catch(() => {});
+      }
+
+      await page.waitForTimeout(150);
     }
 
-    if (
-      await btnConfirmarAceptar.isVisible({ timeout: 4000 }).catch(() => false)
-    ) {
-      await btnConfirmarAceptar.click();
+    if (!emitirClickeado) {
+      const finalFrame = await this.obtenerFrameTrabajo(page);
+      const btnEmitirFinal = finalFrame
+        .getByRole('button', { name: 'Emitir' })
+        .or(
+          finalFrame.locator(
+            'button:has-text("Emitir"), input[value="Emitir"], #btnEmitir',
+          ),
+        )
+        .first();
+      await btnEmitirFinal.waitFor({ state: 'visible', timeout: 5000 });
+      await btnEmitirFinal.click({ timeout: 5000 });
+    }
+
+    // 2. Diálogo de confirmación: "¿Está seguro de emitir...?" -> Clic en "Aceptar"
+    const inicioConfirmar = Date.now();
+    while (Date.now() - inicioConfirmar < 12000) {
+      const activeFrame = await this.obtenerFrameTrabajo(page);
+      let btnConfirmarAceptar = activeFrame
+        .getByRole('button', { name: 'Aceptar' })
+        .or(
+          activeFrame.locator(
+            '.dijitDialog button:has-text("Aceptar"), button:has-text("Aceptar"), button:has-text("Sí"), button:has-text("Si"), #btnAceptar',
+          ),
+        )
+        .filter({ visible: true })
+        .first();
+
+      if (
+        !(await btnConfirmarAceptar
+          .isVisible({ timeout: 200 })
+          .catch(() => false))
+      ) {
+        btnConfirmarAceptar = page
+          .getByRole('button', { name: 'Aceptar' })
+          .or(
+            page.locator(
+              '.dijitDialog button:has-text("Aceptar"), button:has-text("Aceptar"), button:has-text("Sí"), button:has-text("Si"), #btnAceptar',
+            ),
+          )
+          .filter({ visible: true })
+          .first();
+      }
+
+      if (
+        await btnConfirmarAceptar.isVisible({ timeout: 200 }).catch(() => false)
+      ) {
+        await btnConfirmarAceptar
+          .click({ force: true, timeout: 3000 })
+          .catch(() => {});
+        this.logger.log(
+          'Confirmación de emisión (Aceptar) enviada exitosamente.',
+        );
+        break;
+      }
+      await page.waitForTimeout(100);
     }
 
     // 3. Monitoreo reactivo del número de comprobante emitido (ej. "EB01-00000452")
@@ -2398,10 +2584,11 @@ export class SunatSolBotService {
 
     const inicioEsperaComprobante = Date.now();
     while (Date.now() - inicioEsperaComprobante < 20000) {
+      const activeFrame = await this.obtenerFrameTrabajo(page);
       const textoCompleto =
         ((await page.textContent('body').catch(() => '')) || '') +
         ' ' +
-        ((await frameOrPage.textContent('body').catch(() => '')) || '');
+        ((await activeFrame.textContent('body').catch(() => '')) || '');
 
       const match = textoCompleto.match(regexComprobante);
       if (match && match[1] && match[2]) {
@@ -2480,9 +2667,17 @@ export class SunatSolBotService {
           return !!(
             document.getElementById('inicio.tipoDocumento') ||
             document.getElementById('inicio.numeroDocumento') ||
+            document.getElementById('btnEmitir') ||
             document.querySelector('[id*="tipoDocumento"]') ||
             document.querySelector(
-              'button[id*="Continuar"], input[value*="Continuar"]',
+              'button[id*="Continuar"], input[value*="Continuar"], button[id*="Emitir"], input[value*="Emitir"]',
+            ) ||
+            Array.from(
+              document.querySelectorAll('button, input[type="button"]'),
+            ).some((b) =>
+              /emitir/i.test(
+                b.textContent || (b as HTMLInputElement).value || '',
+              ),
             )
           );
         });
