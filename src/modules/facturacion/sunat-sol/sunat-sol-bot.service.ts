@@ -280,7 +280,10 @@ export class SunatSolBotService {
             'Validando montos tributarios y confirmando la emisión...',
           porcentaje: 90,
         });
-        const resultadoEmision = await this.confirmarYEmitirBoleta(page);
+        const resultadoEmision = await this.confirmarYEmitirBoleta(
+          page,
+          params.soloPreliminar,
+        );
 
         params.onProgreso?.({
           paso: 7,
@@ -338,8 +341,21 @@ export class SunatSolBotService {
             const htmlPath = path.join(logsDir, `error-${timestamp}.html`);
             const htmlContent = await page.content();
             fs.writeFileSync(htmlPath, htmlContent, 'utf-8');
+
+            for (let fi = 0; fi < page.frames().length; fi++) {
+              const frm = page.frames()[fi];
+              const fHtml = await frm.content().catch(() => '');
+              if (fHtml) {
+                const frmPath = path.join(
+                  logsDir,
+                  `error-${timestamp}-frame-${fi}-${frm.name() || 'noname'}.html`,
+                );
+                fs.writeFileSync(frmPath, fHtml, 'utf-8');
+              }
+            }
+
             this.logger.error(
-              `[DIAGNÓSTICO VISUAL] Volcado HTML de la pantalla guardado en: ${htmlPath}`,
+              `[DIAGNÓSTICO VISUAL] Volcado HTML de la pantalla y frames guardado en: ${htmlPath}`,
             );
           } catch {
             // Ignorar fallo al tomar captura
@@ -701,7 +717,7 @@ export class SunatSolBotService {
       // 3. Menú o elementos del portal ya renderizados
       const portalMenuVisible = page
         .locator(
-          'text="Empresas", text="Comprobantes", #divOpciones, #menuInternet',
+          'text="Empresas", text="Comprobantes", #divOpciones, #menuInternet, #divServicios',
         )
         .first();
       if (
@@ -714,6 +730,19 @@ export class SunatSolBotService {
       }
 
       await page.waitForTimeout(60);
+    }
+
+    // Esperar a que MenuInternet.htm termine de cargar sus elementos principales en el DOM
+    try {
+      const menuContainer = page
+        .locator(
+          '#divServicios, #divOpcionServicio1, #divOpcionServicio2, #txtBusca',
+        )
+        .first();
+      await menuContainer.waitFor({ state: 'visible', timeout: 15000 });
+      this.logger.debug('Menú SOL completamente cargado e interactivo.');
+    } catch {
+      this.logger.debug('Aviso: continuando tras espera de carga del menú.');
     }
   }
 
@@ -763,6 +792,39 @@ export class SunatSolBotService {
       `Navegando a Emisión de ${esFactura ? 'Factura' : 'Boleta'} Electrónica en SEE-SOL (Código: ${codigoSunat})...`,
     );
 
+    // Si la sesión inició con DNI, SUNAT abre por defecto en modo "Personas" (#divOpcionServicio1).
+    // Las opciones de emisión de Boleta y Factura SEE-SOL pertenecen exclusivamente a "Empresas" (#divOpcionServicio2).
+    // Aseguramos la conmutación a modo "Empresas" antes de invocar la navegación.
+    try {
+      const btnEmpresas = page
+        .locator('#divOpcionServicio2, [data-id="2"]')
+        .first();
+      await btnEmpresas.waitFor({ state: 'visible', timeout: 15000 });
+
+      const esActivo = await btnEmpresas
+        .evaluate((el) => el.classList.contains('divOpcionServicioActivo'))
+        .catch(() => false);
+
+      if (!esActivo) {
+        this.logger.debug(
+          'Conmutando perfil SOL a Empresas (#divOpcionServicio2)...',
+        );
+        await btnEmpresas.click({ force: true }).catch(() => {});
+        await page
+          .waitForFunction(
+            () =>
+              document
+                .getElementById('divTodasOpciones')
+                ?.classList.contains('modoEmpresas'),
+            { timeout: 4000 },
+          )
+          .catch(() => {});
+        this.logger.debug('Modo Empresas activo.');
+      }
+    } catch (e) {
+      this.logger.debug(`Aviso conmutación Empresas: ${e}`);
+    }
+
     // Estrategia 1: Invocación directa de la función global oficial ejecuta() o clickEnNivel4() de SUNAT SOL.
     // Esto es instantáneo, 100% robusto y no depende del ancho del viewport (hidden-xs) ni de que el árbol esté desplegado.
     let ejecutado = false;
@@ -786,6 +848,15 @@ export class SunatSolBotService {
 
           try {
             const win = window as unknown as WindowSunatMenu;
+
+            // Asegurar que modoEmpresas esté en el contenedor
+            const btnEmpresas = document.getElementById('divOpcionServicio2');
+            if (
+              btnEmpresas &&
+              !btnEmpresas.classList.contains('divOpcionServicioActivo')
+            ) {
+              btnEmpresas.click();
+            }
 
             // A) Función global canónica ejecuta()
             if (typeof win.ejecuta === 'function') {
@@ -999,7 +1070,7 @@ export class SunatSolBotService {
    */
   private obtenerCodigoTipoDoc(tipoDoc?: string, numDoc?: string): string {
     const opcion = this.obtenerNombreOpcionTipoDoc(tipoDoc, numDoc);
-    if (opcion === 'SIN DOCUMENTO') return '0';
+    if (opcion === 'SIN DOCUMENTO') return '-';
     if (opcion === 'DOC. NACIONAL DE IDENTIDAD') return '1';
     if (opcion === 'REG. UNICO DE CONTRIBUYENTES') return '6';
     if (opcion === 'CARNÉ DE EXTRANJERÍA') return '4';
@@ -1049,182 +1120,29 @@ export class SunatSolBotService {
     const codigoDoc = this.obtenerCodigoTipoDoc(tipoDoc, numDoc);
 
     // -------------------------------------------------------------------------
-    // 1. SELECCIONAR EL TIPO DE DOCUMENTO (DNI, RUC, SIN DOCUMENTO, ETC.)
+    // 1. SELECCIONAR TIPO DE DOCUMENTO Y CONSIGNAR DATOS
     // -------------------------------------------------------------------------
-    this.logger.debug(
-      `[Paso 1] Seleccionando tipo de documento: "${nombreOpcion}" (código "${codigoDoc}")...`,
-    );
-
-    // A) Si el menú flotante de opciones ya está desplegado en pantalla, hacer clic directo en la opción
-    const itemMenuAbierto = frameOrPage
-      .locator(
-        '.dijitMenuItem, [role="option"], tr.dijitMenuItem, td.dijitMenuItem, div.dijitMenuItem',
-      )
-      .filter({ hasText: nombreOpcion })
-      .first();
-
-    let docSeleccionado = false;
-    if (await itemMenuAbierto.isVisible({ timeout: 600 }).catch(() => false)) {
-      this.logger.debug(
-        `[Paso 1] Opción "${nombreOpcion}" visible en popup desplegado; seleccionando con clic directo.`,
-      );
-      await itemMenuAbierto.click({ force: true }).catch(() => {});
-      docSeleccionado = true;
-    }
-
-    // B) Actualizar el widget ComboBox / FilteringSelect de Dojo directamente
-    try {
-      const widgetActualizado = await frameOrPage.evaluate(
-        ({ targetText, targetVal }) => {
-          interface DojoItem {
-            name?: string;
-            label?: string;
-            descripcion?: string;
-            id?: string | number;
-            value?: string | number;
-          }
-          interface DojoWidget {
-            store?: { data?: DojoItem[] };
-            set: (prop: string, val: unknown) => void;
-            get: (prop: string) => string | number | undefined;
-            onChange?: (val: unknown) => void;
-          }
-          interface WindowWithDojo extends Window {
-            dijit?: {
-              byId: (id: string) => DojoWidget | undefined;
-              popup?: { close: (w?: unknown) => void };
-            };
-          }
-          const win = window as unknown as WindowWithDojo;
-          if (win.dijit) {
-            const widget = win.dijit.byId('inicio.tipoDocumento');
-            if (widget) {
-              if (widget.store?.data) {
-                const item = widget.store.data.find((d: DojoItem) => {
-                  const dText = String(
-                    d.name || d.label || d.descripcion || '',
-                  ).toUpperCase();
-                  const dId = String(
-                    d.id !== undefined ? d.id : (d.value ?? ''),
-                  );
-                  return (
-                    dText.includes(targetText.toUpperCase()) ||
-                    dId === targetVal
-                  );
-                });
-                if (item) {
-                  widget.set(
-                    'value',
-                    item.id !== undefined ? item.id : item.value,
-                  );
-                  widget.set(
-                    'displayedValue',
-                    item.name || item.label || targetText,
-                  );
-                  widget.onChange?.(widget.get('value'));
-                  if (win.dijit.popup?.close) win.dijit.popup.close(widget);
-                  return true;
-                }
-              }
-              widget.set('value', targetVal);
-              widget.set('displayedValue', targetText);
-              widget.onChange?.(widget.get('value'));
-              if (win.dijit.popup?.close) win.dijit.popup.close(widget);
-              return true;
-            }
-          }
-          return false;
-        },
-        { targetText: nombreOpcion, targetVal: codigoDoc },
-      );
-      if (widgetActualizado) docSeleccionado = true;
-    } catch {
-      // Ignorar fallo al interactuar con Dojo
-    }
-
-    // C) Si aún no fue seleccionado, desplegar e interactuar con Playwright
-    if (!docSeleccionado) {
-      const comboTipoDoc = frameOrPage
-        .locator('[id="inicio.tipoDocumento"]')
-        .first();
-      const flechaCombo = frameOrPage.locator('.dijitReset.dijitRight').first();
-      if (await comboTipoDoc.isVisible({ timeout: 1500 }).catch(() => false)) {
-        await comboTipoDoc.click({ force: true }).catch(() => {});
-        const opt = frameOrPage
-          .locator('.dijitMenuItem, [role="option"]')
-          .filter({ hasText: nombreOpcion })
-          .first();
-        if (await opt.isVisible({ timeout: 1000 }).catch(() => false)) {
-          await opt.click({ force: true }).catch(() => {});
-          docSeleccionado = true;
-        } else if (
-          await flechaCombo.isVisible({ timeout: 600 }).catch(() => false)
-        ) {
-          await flechaCombo.click({ force: true }).catch(() => {});
-          const opt2 = frameOrPage
-            .locator('.dijitMenuItem, [role="option"]')
-            .filter({ hasText: nombreOpcion })
-            .first();
-          if (await opt2.isVisible({ timeout: 800 }).catch(() => false)) {
-            await opt2.click({ force: true }).catch(() => {});
-            docSeleccionado = true;
-          }
-        }
-      }
-    }
-
-    // Cerrar cualquier menú flotante residual para no interceptar los siguientes clicks
-    await page.keyboard.press('Escape').catch(() => {});
-
-    // -------------------------------------------------------------------------
-    // 2. RELLENAR LOS DATOS (NÚMERO DE DOCUMENTO Y "CLIENTE GENERAL" O DATOS)
-    // -------------------------------------------------------------------------
-    this.logger.debug(
-      `[Paso 2] Rellenando datos (${esSinDoc ? 'SIN DOCUMENTO' : `Doc: ${numDoc}`})...`,
-    );
-
-    const inputNumDoc = frameOrPage
-      .locator(
-        '[id="inicio.numeroDocumento"], #txtNumDoc, #numDoc, input[name*="numDoc"]',
-      )
-      .first();
-
     if (esSinDoc) {
-      // 2.A: Si es SIN DOCUMENTO:
-      // a) Asegurar que el número de documento esté COMPLETAMENTE VACÍO
-      if (await inputNumDoc.isVisible({ timeout: 600 }).catch(() => false)) {
-        await inputNumDoc.click({ force: true }).catch(() => {});
-        await inputNumDoc.fill('').catch(() => {});
-      }
-      try {
-        await frameOrPage.evaluate(() => {
-          interface WindowWithDojo extends Window {
-            dijit?: {
-              byId: (
-                id: string,
-              ) => { set: (p: string, v: unknown) => void } | undefined;
-            };
-          }
-          const win = window as unknown as WindowWithDojo;
-          win.dijit?.byId('inicio.numeroDocumento')?.set('value', '');
-          const el = document.getElementById(
-            'inicio.numeroDocumento',
-          ) as HTMLInputElement | null;
-          if (el) el.value = '';
-        });
-      } catch {
-        // Ignorar
-      }
-
-      // b) Llenar como "CLIENTE GENERAL" en Apellidos y Nombres / Razón Social
-      const nombreClienteGeneral = 'CLIENTE GENERAL';
       this.logger.debug(
-        `[Paso 2] Consignando "${nombreClienteGeneral}" para emisión sin documento...`,
+        '[Paso 1] Seleccionando SIN DOCUMENTO en combo Dijit (#widget_inicio.tipoDocumento)...',
       );
+      const flecha = frameOrPage
+        .locator('[id="widget_inicio.tipoDocumento"] .dijitArrowButton')
+        .first();
+      await flecha.waitFor({ state: 'visible', timeout: 10000 });
+      await flecha.click({ force: true });
+      await page.waitForTimeout(300);
 
-      // DOM directo para máxima velocidad y fiabilidad
-      try {
-        await frameOrPage.evaluate((nombreVal) => {
+      const optSinDoc = frameOrPage
+        .locator('#inicio\\.tipoDocumento_popup0')
+        .first();
+      await optSinDoc.waitFor({ state: 'visible', timeout: 5000 });
+      await optSinDoc.click({ force: true });
+      await page.waitForTimeout(300);
+
+      // Consignar "CLIENTE GENERAL" vía Dojo/DOM (el input queda deshabilitado por SUNAT para edición interactiva)
+      await frameOrPage
+        .evaluate(() => {
           interface WindowWithDojo extends Window {
             dijit?: {
               byId: (
@@ -1233,134 +1151,53 @@ export class SunatSolBotService {
             };
           }
           const win = window as unknown as WindowWithDojo;
-          const posiblesIds = [
+          win.dijit
+            ?.byId('inicio.razonSocial')
+            ?.set('value', 'CLIENTE GENERAL');
+          const el = document.getElementById(
             'inicio.razonSocial',
-            'inicio.nombre',
-            'inicio.denominacion',
-            'inicio.apellidosNombres',
-            'inicio.nombreCliente',
-            'txtRazonSocial',
-            'txtNombre',
-            'razonSocial',
-          ];
-          for (const id of posiblesIds) {
-            const el = document.getElementById(id) as HTMLInputElement | null;
-            if (el && !el.disabled && el.type !== 'hidden') {
-              el.value = nombreVal;
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-              win.dijit?.byId(id)?.set('value', nombreVal);
-              return;
-            }
-          }
-          const rows = Array.from(document.querySelectorAll('tr'));
-          for (const tr of rows) {
-            const text = tr.textContent || '';
-            if (
-              /Apellidos y Nombres|Denominaci[oó]n|Raz[oó]n Social/i.test(text)
-            ) {
-              const inp = tr.querySelector<HTMLInputElement>(
-                'input[type="text"], input:not([type="radio"]):not([type="hidden"]):not([type="checkbox"])',
-              );
-              if (inp && !inp.disabled) {
-                inp.value = nombreVal;
-                inp.dispatchEvent(new Event('input', { bubbles: true }));
-                inp.dispatchEvent(new Event('change', { bubbles: true }));
-                if (inp.id) win.dijit?.byId(inp.id)?.set('value', nombreVal);
-                return;
-              }
-            }
-          }
-        }, nombreClienteGeneral);
-      } catch {
-        // Ignorar
-      }
-
-      // Playwright locator para emular foco y eventos reales
-      try {
-        const inputNombre = frameOrPage
-          .locator(
-            'tr:has-text("Apellidos y Nombres") input[type="text"], tr:has-text("Razón Social") input[type="text"], [id="inicio.razonSocial"], [id="inicio.nombre"], [id="inicio.apellidosNombres"], input[name*="razonSocial"], input[name*="nombre"]',
-          )
-          .filter({ visible: true })
-          .first();
-        if (await inputNombre.isVisible({ timeout: 1000 }).catch(() => false)) {
-          await inputNombre.click({ force: true }).catch(() => {});
-          await page.keyboard.press('Control+A').catch(() => {});
-          await page.keyboard.press('Backspace').catch(() => {});
-          await inputNombre.fill(nombreClienteGeneral).catch(() => {});
-          await page.keyboard.press('Tab').catch(() => {});
-        }
-      } catch {
-        // Ignorar
-      }
-    } else {
-      // 2.B: Si es con DNI o RUC (o documento extranjero):
-      // a) Escribir el número de documento
-      if (numDoc) {
-        if (await inputNumDoc.isVisible({ timeout: 1500 }).catch(() => false)) {
-          await inputNumDoc.click({ force: true }).catch(() => {});
-          await inputNumDoc.fill(numDoc).catch(() => {});
-          await page.keyboard.press('Tab').catch(() => {});
-        }
-        try {
-          await frameOrPage.evaluate((docVal) => {
-            interface WindowWithDojo extends Window {
-              dijit?: {
-                byId: (
-                  id: string,
-                ) => { set: (p: string, v: unknown) => void } | undefined;
-              };
-            }
-            const win = window as unknown as WindowWithDojo;
-            win.dijit?.byId('inicio.numeroDocumento')?.set('value', docVal);
-            const el = document.getElementById(
-              'inicio.numeroDocumento',
-            ) as HTMLInputElement | null;
-            if (el) {
-              el.value = docVal;
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-          }, numDoc);
-        } catch {
-          // Ignorar
-        }
-      }
-
-      // b) SUNAT suele autocompletar la razón social con el DNI o RUC.
-      // Si se indicó un nombre explícito en params o si el campo sigue vacío tras la consulta, completarlo.
-      const rawNombre = (params.receptor?.razonSocialODatos || '').trim();
-      const nombreAUsar =
-        rawNombre && rawNombre !== '-' && rawNombre !== '0'
-          ? rawNombre
-          : 'CLIENTE GENERAL';
-
-      // Espera de 400ms para autocompletado nativo de RENIEC/SUNAT
-      await page.waitForTimeout(400);
-
-      const nombreActual = await frameOrPage
-        .evaluate(() => {
-          const ids = [
-            'inicio.razonSocial',
-            'inicio.nombre',
-            'inicio.denominacion',
-            'inicio.apellidosNombres',
-          ];
-          for (const id of ids) {
-            const el = document.getElementById(id) as HTMLInputElement | null;
-            if (el && el.value) return el.value.trim();
-          }
-          return '';
+          ) as HTMLInputElement | null;
+          if (el) el.value = 'CLIENTE GENERAL';
         })
-        .catch(() => '');
+        .catch(() => {});
+    } else {
+      this.logger.debug(
+        `[Paso 1] Seleccionando tipo de documento: "${nombreOpcion}" (código "${codigoDoc}")...`,
+      );
+      const flecha = frameOrPage
+        .locator('[id="widget_inicio.tipoDocumento"] .dijitArrowButton')
+        .first();
+      if (await flecha.isVisible({ timeout: 2000 }).catch(() => false)) {
+        await flecha.click({ force: true });
+        await page.waitForTimeout(300);
 
-      if (!nombreActual) {
-        this.logger.debug(
-          `[Paso 2] Consignando nombre del cliente: "${nombreAUsar}"...`,
-        );
-        try {
-          await frameOrPage.evaluate((nombreVal) => {
+        const selectorPopup = nombreOpcion.includes('RUC')
+          ? '#inicio\\.tipoDocumento_popup4, .dijitMenuItem:has-text("REG. UNICO")'
+          : '#inicio\\.tipoDocumento_popup2, .dijitMenuItem:has-text("DOC. NACIONAL")';
+
+        const opt = frameOrPage.locator(selectorPopup).first();
+        if (await opt.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await opt.click({ force: true });
+        }
+      }
+      await page.waitForTimeout(300);
+
+      if (numDoc) {
+        const inputNumDoc = frameOrPage
+          .locator('[id="inicio.numeroDocumento"]')
+          .first();
+        if (await inputNumDoc.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await inputNumDoc.click({ force: true });
+          await inputNumDoc.fill(numDoc);
+          await page.keyboard.press('Tab');
+        }
+      }
+
+      const rawNombre = (params.receptor?.razonSocialODatos || '').trim();
+      if (rawNombre && rawNombre !== '-' && rawNombre !== '0') {
+        await page.waitForTimeout(500);
+        await frameOrPage
+          .evaluate((nombreVal) => {
             interface WindowWithDojo extends Window {
               dijit?: {
                 byId: (
@@ -1369,212 +1206,59 @@ export class SunatSolBotService {
               };
             }
             const win = window as unknown as WindowWithDojo;
-            const posiblesIds = [
+            win.dijit?.byId('inicio.razonSocial')?.set('value', nombreVal);
+            const el = document.getElementById(
               'inicio.razonSocial',
-              'inicio.nombre',
-              'inicio.denominacion',
-              'inicio.apellidosNombres',
-              'inicio.nombreCliente',
-              'txtRazonSocial',
-              'txtNombre',
-              'razonSocial',
-            ];
-            for (const id of posiblesIds) {
-              const el = document.getElementById(id) as HTMLInputElement | null;
-              if (el && !el.disabled && el.type !== 'hidden') {
-                el.value = nombreVal;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-                el.dispatchEvent(new Event('change', { bubbles: true }));
-                win.dijit?.byId(id)?.set('value', nombreVal);
-                return;
-              }
-            }
-          }, nombreAUsar);
-        } catch {
-          // Ignorar
-        }
-
-        try {
-          const inputNombre = frameOrPage
-            .locator(
-              'tr:has-text("Apellidos y Nombres") input[type="text"], tr:has-text("Razón Social") input[type="text"], [id="inicio.razonSocial"], [id="inicio.nombre"], [id="inicio.apellidosNombres"]',
-            )
-            .filter({ visible: true })
-            .first();
-          if (
-            await inputNombre.isVisible({ timeout: 800 }).catch(() => false)
-          ) {
-            await inputNombre.click({ force: true }).catch(() => {});
-            await inputNombre.fill(nombreAUsar).catch(() => {});
-            await page.keyboard.press('Tab').catch(() => {});
-          }
-        } catch {
-          // Ignorar
-        }
+            ) as HTMLInputElement | null;
+            if (el && !el.disabled) el.value = nombreVal;
+          }, rawNombre)
+          .catch(() => {});
       }
     }
 
     // -------------------------------------------------------------------------
-    // 3. SELECCIONAR LA MONEDA (SOLES / PEN)
+    // 2. SELECCIONAR LA MONEDA (SOLES / PEN)
     // -------------------------------------------------------------------------
-    const monedaNombre = params.moneda === 'USD' ? 'DOLARES' : 'SOLES';
-    this.logger.debug(`[Paso 3] Seleccionando moneda: "${monedaNombre}"...`);
-
-    const selectMoneda = frameOrPage
-      .locator(
-        'select[name*="moneda"], #cmbMoneda, select[id*="tipoMoneda"], select[id*="moneda"], tr:has-text("Tipo de Moneda") select',
-      )
-      .first();
-    if (await selectMoneda.isVisible({ timeout: 600 }).catch(() => false)) {
-      await selectMoneda
-        .selectOption({ label: monedaNombre })
-        .catch(async () => {
-          await selectMoneda
-            .selectOption({ value: params.moneda === 'USD' ? 'USD' : 'PEN' })
-            .catch(() => {});
-        });
+    if (params.moneda === 'USD') {
+      const selectMoneda = frameOrPage
+        .locator('select[name*="moneda"], #cmbMoneda, select[id*="tipoMoneda"]')
+        .first();
+      if (await selectMoneda.isVisible({ timeout: 600 }).catch(() => false)) {
+        await selectMoneda.selectOption({ label: 'DOLARES' }).catch(() => {});
+      }
     }
 
-    try {
-      await frameOrPage.evaluate((textoMoneda) => {
-        interface WindowWithDojo extends Window {
-          dijit?: {
-            byId: (id: string) =>
-              | {
-                  set: (p: string, v: unknown) => void;
-                  onChange?: (v: unknown) => void;
-                }
-              | undefined;
-          };
-        }
-        const win = window as unknown as WindowWithDojo;
-        const w =
-          win.dijit?.byId('inicio.tipoMoneda') ||
-          win.dijit?.byId('inicio.moneda');
-        if (w) {
-          w.set('displayedValue', textoMoneda);
-          w.onChange?.(textoMoneda);
-        }
-      }, monedaNombre);
-    } catch {
-      // Ignorar
-    }
-
-    // Asegurar que no quede ningún menú emergente abierto antes de presionar Continuar
-    await page.keyboard.press('Escape').catch(() => {});
-
     // -------------------------------------------------------------------------
-    // 4. PRESIONAR CONTINUAR (PARA AVANZAR A LA PANTALLA DE ÍTEMS)
+    // 3. PRESIONAR CONTINUAR (PARA AVANZAR A LA PANTALLA DE ÍTEMS)
     // -------------------------------------------------------------------------
     this.logger.debug(
-      '[Paso 4] Presionando Continuar para avanzar a la pantalla de ítems...',
+      '[Paso 1] Presionando Continuar (#inicio.botonGrabarDocumento)...',
     );
+    const btnContinuarPaso1 = frameOrPage
+      .locator('#inicio\\.botonGrabarDocumento')
+      .first();
+    await btnContinuarPaso1.waitFor({ state: 'visible', timeout: 10000 });
+    await btnContinuarPaso1.click({ force: true });
 
-    const esItemsVisible = async (): Promise<boolean> => {
-      const btn = frameOrPage
-        .getByRole('button', { name: 'Adicionar' })
-        .or(
-          frameOrPage.locator(
-            'button:not([id*="docrel"]):has-text("Adicionar"), a:has-text("Adicionar"), span:has-text("Adicionar")',
-          ),
-        )
-        .filter({ visible: true })
-        .first();
-      return await btn.isVisible({ timeout: 150 }).catch(() => false);
-    };
-
-    const modalUnionSelector = [
-      '#dlgBtnAceptar',
-      'button:has-text("Aceptar")',
-      'input[value="Aceptar"]',
-      'button:has-text("Sí")',
-      'button:has-text("Si")',
-      'input[value="Sí"]',
-      'input[value="Si"]',
-      '.dijitDialog button:has-text("Aceptar")',
-      '.dijitDialog button:has-text("Sí")',
-      '.dijitDialog button:has-text("Si")',
-      '.dijitDialog button:has-text("Continuar")',
-    ].join(', ');
-
-    for (let c = 0; c < 3; c++) {
-      if (await esItemsVisible()) {
-        this.logger.debug(
-          'Pantalla de ítems ya visible. Paso 1 completado con éxito.',
-        );
+    // Esperar a que inicio.form desaparezca y se monte item.form
+    const tInicioItems = Date.now();
+    let cargoItems = false;
+    while (Date.now() - tInicioItems < 20000) {
+      const transiciono = await frameOrPage
+        .evaluate(() => {
+          return (
+            !document.getElementById('inicio.form') &&
+            !!document.getElementById('item.form')
+          );
+        })
+        .catch(() => false);
+      if (transiciono) {
+        cargoItems = true;
         break;
       }
-
-      const btnContinuar = frameOrPage
-        .getByRole('button', { name: 'Continuar' })
-        .or(
-          frameOrPage.locator(
-            'button:has-text("Continuar"), input[value*="Continuar"], a:has-text("Continuar"), #btnContinuar, [id*="btnContinuar"], [id*="Continuar"]',
-          ),
-        )
-        .filter({ visible: true })
-        .first();
-
-      if (await btnContinuar.isVisible({ timeout: 2000 }).catch(() => false)) {
-        this.logger.debug(`Presionando Continuar (intento ${c + 1})...`);
-        await page.keyboard.press('Escape').catch(() => {});
-        await btnContinuar.click({ force: true }).catch(() => {});
-        await frameOrPage
-          .evaluate(() => {
-            const btns = Array.from(
-              document.querySelectorAll(
-                'button, input[type="button"], input[type="submit"], a, span.btn, div.btn',
-              ),
-            );
-            const btn = btns.find((el) => {
-              const t = (
-                el.textContent ||
-                (el as HTMLInputElement).value ||
-                ''
-              ).trim();
-              return /continuar/i.test(t);
-            });
-            if (btn) (btn as HTMLElement).click();
-          })
-          .catch(() => {});
-
-        // Esperar reactivamente a que aparezca la pantalla de ítems o algún diálogo modal de confirmación
-        const inicioEspera = Date.now();
-        while (Date.now() - inicioEspera < 4000) {
-          if (await esItemsVisible()) {
-            break;
-          }
-
-          // Aceptar cualquier modal intermedio
-          const modalInFrame = frameOrPage
-            .locator(modalUnionSelector)
-            .filter({ visible: true })
-            .first();
-          if (
-            await modalInFrame.isVisible({ timeout: 100 }).catch(() => false)
-          ) {
-            this.logger.log('Aceptando modal de confirmación en frame');
-            await modalInFrame.click({ force: true }).catch(() => {});
-          } else {
-            const modalInPage = page
-              .locator(modalUnionSelector)
-              .filter({ visible: true })
-              .first();
-            if (
-              await modalInPage.isVisible({ timeout: 100 }).catch(() => false)
-            ) {
-              this.logger.log('Aceptando modal de confirmación en página');
-              await modalInPage.click({ force: true }).catch(() => {});
-            }
-          }
-
-          if (await esItemsVisible()) {
-            break;
-          }
-          await page.waitForTimeout(60);
-        }
-      }
+      await page.waitForTimeout(250);
     }
+    this.logger.debug(`[Paso 1] Pantalla de ítems cargada: ${cargoItems}.`);
   }
 
   /**
@@ -1603,26 +1287,20 @@ export class SunatSolBotService {
         porcentaje: Math.round(62 + ((index + 1) / params.items.length) * 22),
       });
 
-      // 1. Clic en "Adicionar" sobre la tabla de ítems
+      // 1. Clic en "Adicionar" sobre la tabla de ítems (usando los selectores canónicos de SUNAT)
       const btnAdicionar = frameOrPage
-        .getByRole('button', { name: 'Adicionar' })
-        .filter({ visible: true })
-        .or(
-          frameOrPage
-            .locator(
-              'button:not([id*="docrel"]):has-text("Adicionar"), a:has-text("Adicionar"), span:has-text("Adicionar"), #detalle\\.botonAddItem, #item\\.botonAddItem',
-            )
-            .filter({ visible: true }),
+        .locator(
+          '#boleta\\.addItemButton, #item\\.botonAddItem, span[role="button"]:has-text("Adicionar"):not([id*="docrel"]), button:has-text("Adicionar"):not([id*="docrel"])',
         )
+        .filter({ visible: true })
         .first();
 
       await btnAdicionar.waitFor({ state: 'visible', timeout: 20000 });
-      await btnAdicionar.click();
+      await btnAdicionar.click({ force: true });
 
       // Esperar a que el modal "Nuevo Item" esté completamente visible
       const dialogNuevoItem = frameOrPage
-        .locator('.dijitDialog, [role="dialog"], #modalItem')
-        .filter({ visible: true })
+        .locator('.dijitDialog:not([style*="display: none"])')
         .first();
       await dialogNuevoItem.waitFor({ state: 'visible', timeout: 12000 });
 
@@ -1634,119 +1312,52 @@ export class SunatSolBotService {
         `[Ítem ${index + 1}] Seleccionando tipo: ${esServicio ? 'SERVICIO' : 'BIEN'}...`,
       );
 
-      const radioTipo = dialogNuevoItem
-        .getByRole('radio', { name: esServicio ? /servicio/i : /bien/i })
-        .or(
-          dialogNuevoItem.locator(
-            esServicio
-              ? 'input[type="radio"][value="S"], input[type="radio"][value*="servicio" i]'
-              : 'input[type="radio"][value="B"], input[type="radio"][value*="bien" i]',
-          ),
-        )
-        .or(
-          dialogNuevoItem.locator(
-            esServicio
-              ? 'input[type="radio"]:nth-of-type(2)'
-              : 'input[type="radio"]:nth-of-type(1)',
-          ),
-        )
-        .first();
+      // Clic directo en DOM y widget Dojo por texto de la fila (Bien vs Servicio)
+      await frameOrPage
+        .evaluate((isServ) => {
+          const dlg = document.querySelector(
+            '.dijitDialog:not([style*="display: none"])',
+          );
+          if (!dlg) return;
+          const radios = Array.from(
+            dlg.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
+          );
+          for (const r of radios) {
+            const text = (
+              r.closest('tr')?.textContent ||
+              r.parentElement?.textContent ||
+              ''
+            ).toLowerCase();
+            const matches = isServ
+              ? text.includes('servicio')
+              : text.includes('bien') && !text.includes('servicio');
+            if (matches) {
+              r.click();
+              const win = window as any;
+              const wid =
+                r.closest('.dijitRadio')?.getAttribute('widgetid') || r.id;
+              if (wid) win.dijit?.byId(wid)?.set('checked', true);
+              return;
+            }
+          }
+          if (radios.length > 0) {
+            const target = isServ && radios.length > 1 ? radios[1] : radios[0];
+            target.click();
+            const win = window as any;
+            const wid =
+              target.closest('.dijitRadio')?.getAttribute('widgetid') ||
+              target.id;
+            if (wid) win.dijit?.byId(wid)?.set('checked', true);
+          }
+        }, esServicio)
+        .catch(() => {});
 
-      if (await radioTipo.isVisible({ timeout: 800 }).catch(() => false)) {
-        await radioTipo.check().catch(() => {});
-      }
-
-      // Clic por etiqueta visible
       const labelTipo = dialogNuevoItem
         .locator('label, span, td')
         .filter({ hasText: esServicio ? /^Servicio$/i : /^Bien$/i })
         .first();
       if (await labelTipo.isVisible({ timeout: 300 }).catch(() => false)) {
-        await labelTipo.click().catch(() => {});
-      }
-
-      // Sincronización nativa DOM y Dojo para Bien / Servicio
-      const fnSeleccionarTipo = (isServ: boolean) => {
-        const dlgs = document.querySelectorAll(
-          '.dijitDialog, [role="dialog"], #modalItem',
-        );
-        for (const dlg of Array.from(dlgs)) {
-          if (window.getComputedStyle(dlg).display === 'none') continue;
-          const radios = Array.from(
-            dlg.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
-          );
-          for (const r of radios) {
-            const val = (r.value || '').toUpperCase();
-            const id = (r.id || '').toLowerCase();
-            const label =
-              r.closest('label') ||
-              document.querySelector(`label[for="${r.id}"]`);
-            const labelText = (
-              label?.textContent ||
-              r.parentElement?.textContent ||
-              ''
-            )
-              .trim()
-              .toLowerCase();
-            const matches = isServ
-              ? val === 'S' ||
-                id.includes('servicio') ||
-                labelText.includes('servicio')
-              : val === 'B' ||
-                id.includes('bien') ||
-                labelText.includes('bien');
-            if (matches) {
-              r.checked = true;
-              r.click();
-              r.dispatchEvent(new Event('change', { bubbles: true }));
-              interface WinDojo extends Window {
-                dijit?: {
-                  byNode: (n: Node) =>
-                    | {
-                        set: (k: string, v: unknown) => void;
-                        onChange?: (v: unknown) => void;
-                      }
-                    | undefined;
-                  byId: (id: string) =>
-                    | {
-                        set: (k: string, v: unknown) => void;
-                        onChange?: (v: unknown) => void;
-                      }
-                    | undefined;
-                };
-              }
-              const win = window as unknown as WinDojo;
-              if (win.dijit) {
-                const w =
-                  win.dijit.byNode(r) ||
-                  (r.id ? win.dijit.byId(r.id) : undefined);
-                if (w) {
-                  try {
-                    w.set('checked', true);
-                    if (w.onChange) w.onChange(true);
-                  } catch {
-                    // Ignorar si el widget Dojo no soporta onChange
-                  }
-                }
-              }
-              return true;
-            }
-          }
-          // Si no coincidió por id/label, por posición: radios[0] = Bien, radios[1] = Servicio
-          if (radios.length >= 2) {
-            const target = isServ ? radios[1] : radios[0];
-            target.checked = true;
-            target.click();
-            target.dispatchEvent(new Event('change', { bubbles: true }));
-            return true;
-          }
-        }
-        return false;
-      };
-
-      await frameOrPage.evaluate(fnSeleccionarTipo, esServicio).catch(() => {});
-      if (frameOrPage !== page) {
-        await page.evaluate(fnSeleccionarTipo, esServicio).catch(() => {});
+        await labelTipo.click({ force: true }).catch(() => {});
       }
       await page.waitForTimeout(150);
 
@@ -1933,37 +1544,22 @@ export class SunatSolBotService {
         `[Ítem ${index + 1}] Ingresando Valor Unitario: ${precioStr}...`,
       );
 
-      // Localizar la fila específica de "Valor Unitario" (descartando Descuento e Importe Total)
-      const filaValorUnitario = dialogNuevoItem
-        .locator('tr')
-        .filter({ hasText: /valor\s*unitario/i })
-        .filter({ hasNotText: /descuento|importe\s*total/i })
+      // Localizar el input editable de "Valor Unitario" (descartando iconos y campos readonly)
+      const inpPrecio = dialogNuevoItem
+        .locator(
+          '[id="item.valorUnitario"], tr:has-text("Valor Unitario") input.dijitInputInner:not([readonly])',
+        )
         .first();
 
-      let inputPrecio = filaValorUnitario
-        .locator('input:not([type="hidden"])')
-        .filter({ visible: true })
-        .first();
-
-      if (!(await inputPrecio.isVisible({ timeout: 400 }).catch(() => false))) {
-        inputPrecio = dialogNuevoItem
-          .locator(
-            '[id="item.valorUnitario"], [id="item.precioUnitario"], [id="item.montoValorUnitario"], input[name*="valorUnitario"], input[name*="precioUnitario"]',
-          )
-          .filter({ visible: true })
-          .first();
-      }
-
-      // Escritura y reemplazo limpio con teclado
-      if (await inputPrecio.isVisible({ timeout: 1500 }).catch(() => false)) {
-        await inputPrecio.click({ force: true }).catch(() => {});
+      if (await inpPrecio.isVisible({ timeout: 1500 }).catch(() => false)) {
+        await inpPrecio.click({ force: true }).catch(() => {});
         await page.keyboard.press('Control+A').catch(() => {});
         await page.keyboard.press('Backspace').catch(() => {});
-        await page.keyboard.type(precioStr, { delay: 25 }).catch(() => {});
+        await page.keyboard.type(precioStr, { delay: 20 }).catch(() => {});
         await page.keyboard.press('Tab').catch(() => {});
 
         // Sincronizar ÚNICAMENTE este input de Valor Unitario y su widget Dojo asociado
-        await inputPrecio
+        await inpPrecio
           .evaluate(
             (inp: HTMLInputElement, args: { pStr: string; pNum: number }) => {
               const { pStr, pNum } = args;
@@ -1973,36 +1569,18 @@ export class SunatSolBotService {
               inp.dispatchEvent(new Event('change', { bubbles: true }));
               inp.dispatchEvent(new Event('blur', { bubbles: true }));
 
-              interface DojoWidget {
-                set: (prop: string, val: unknown) => void;
-                validate?: () => boolean;
-                onChange?: (val: unknown) => void;
-                _setValueAttr?: (val: unknown) => void;
-                _setDisplayedValueAttr?: (val: string) => void;
-              }
-              interface WindowWithDojo extends Window {
-                dijit?: {
-                  byId: (id: string) => DojoWidget | undefined;
-                  byNode: (node: Node) => DojoWidget | undefined;
-                };
-              }
-              const win = window as unknown as WindowWithDojo;
-              if (win.dijit) {
-                const w =
-                  win.dijit.byNode(inp) ||
-                  (inp.id ? win.dijit.byId(inp.id) : undefined);
-                if (w) {
-                  try {
-                    w.set('value', pNum);
-                    w.set('displayedValue', pStr);
-                    if (w._setValueAttr) w._setValueAttr(pNum);
-                    if (w._setDisplayedValueAttr)
-                      w._setDisplayedValueAttr(pStr);
-                    if (w.validate) w.validate();
-                    if (w.onChange) w.onChange(pNum);
-                  } catch {
-                    void 0;
-                  }
+              const win = window as any;
+              const w =
+                win.dijit?.byNode(inp) ||
+                (inp.id ? win.dijit?.byId(inp.id) : undefined);
+              if (w) {
+                try {
+                  w.set('value', pNum);
+                  w.set('displayedValue', pStr);
+                  if (w.validate) w.validate();
+                  if (w.onChange) w.onChange(pNum);
+                } catch {
+                  void 0;
                 }
               }
             },
@@ -2034,157 +1612,34 @@ export class SunatSolBotService {
         })
         .catch(() => {});
 
-      // Verificación de escritura: si el valor sigue vacío o en 0.00, reintentar sobre el mismo input
-      const precioLeido = await inputPrecio.inputValue().catch(() => '');
-      if (
-        precioNum > 0 &&
-        (!precioLeido ||
-          precioLeido.trim() === '' ||
-          precioLeido === '0.00' ||
-          precioLeido === '0')
-      ) {
-        this.logger.debug(
-          `Reintentando llenado de Valor Unitario con type directo: ${precioStr}`,
-        );
-        await inputPrecio.click({ force: true }).catch(() => {});
-        await page.keyboard.press('Control+A').catch(() => {});
-        await page.keyboard.press('Backspace').catch(() => {});
-        await page.keyboard.type(precioStr, { delay: 25 }).catch(() => {});
-        await page.keyboard.press('Tab').catch(() => {});
-      }
-
       // =========================================================================
       // PASO G: ACEPTAR (GUARDAR ÍTEM)
       // =========================================================================
-      let btnAceptarItem = dialogNuevoItem
+      const btnAceptarItem = dialogNuevoItem
         .locator(
-          'button:has-text("Aceptar"), input[value="Aceptar"], span.dijitButtonText:has-text("Aceptar"), span:has-text("Aceptar"), [role="button"]:has-text("Aceptar"), #btnAceptarItem, #dlgBtnAceptar, #btnAceptar',
+          '[widgetid="item.botonAceptar"], #item\\.botonAceptar, span.dijitButtonText:has-text("Aceptar"), button:has-text("Aceptar"), input[value="Aceptar"]',
         )
         .filter({ visible: true })
         .first();
 
-      if (
-        !(await btnAceptarItem.isVisible({ timeout: 800 }).catch(() => false))
-      ) {
-        btnAceptarItem = frameOrPage
-          .getByRole('button', { name: 'Aceptar' })
-          .or(
-            frameOrPage.locator(
-              'button:has-text("Aceptar"), input[value="Aceptar"], span.dijitButtonText:has-text("Aceptar"), span:has-text("Aceptar"), #btnAceptarItem, #dlgBtnAceptar',
-            ),
-          )
-          .filter({ visible: true })
-          .first();
-      }
-
       this.logger.log(`Presionando botón Aceptar de ítem ${index + 1}...`);
-      await btnAceptarItem
-        .click({ force: true, timeout: 3000 })
-        .catch(() => {});
+      await btnAceptarItem.click({ force: true, timeout: 5000 });
 
-      // Clic nativo DOM sobre el botón Aceptar en el modal como refuerzo
-      const clicAceptarNativo = () => {
-        const dlgs = document.querySelectorAll(
-          '.dijitDialog, [role="dialog"], #modalItem',
-        );
-        for (const dlg of Array.from(dlgs)) {
-          const style = window.getComputedStyle(dlg);
-          if (style.display !== 'none' && style.visibility !== 'hidden') {
-            const btns = Array.from(
-              dlg.querySelectorAll(
-                'button, input[type="button"], span.dijitButton, span.dijitButtonNode, span.dijitButtonText, [role="button"], a',
-              ),
-            );
-            for (const b of btns) {
-              const t = (
-                b.textContent ||
-                (b as HTMLInputElement).value ||
-                ''
-              ).trim();
-              if (/^Aceptar$/i.test(t)) {
-                (b as HTMLElement).click();
-                return true;
-              }
-            }
-          }
-        }
-        return false;
-      };
-
-      await frameOrPage.evaluate(clicAceptarNativo).catch(() => {});
-      if (frameOrPage !== page) {
-        await page.evaluate(clicAceptarNativo).catch(() => {});
-      }
-
-      // Esperar reactivamente a que se procese el ítem y se cierre el modal (o se agregue a la tabla)
+      // Esperar reactivamente a que el modal se cierre o el ítem aparezca en la tabla
       const inicioEsperaItem = Date.now();
-      let reintentoRealizado = false;
-      const descCorta = item.descripcion.slice(0, 15).trim();
-
       while (Date.now() - inicioEsperaItem < 12000) {
-        // ¿Apareció diálogo modal de confirmación / afectación tributaria?
-        const dialogAfectacion = frameOrPage
-          .locator('#dlgBtnAceptar, div:has-text("●Aceptar")')
-          .filter({ visible: true })
-          .first();
-        if (
-          await dialogAfectacion.isVisible({ timeout: 100 }).catch(() => false)
-        ) {
-          await dialogAfectacion.click({ timeout: 2000 }).catch(() => {});
-          const radioOption = frameOrPage.getByRole('radio').first();
-          if (
-            await radioOption.isVisible({ timeout: 400 }).catch(() => false)
-          ) {
-            const isChecked = await radioOption.isChecked().catch(() => false);
-            if (!isChecked) await radioOption.check().catch(() => {});
-            const btnAceptarDialogo = frameOrPage
-              .getByRole('button', { name: 'Aceptar' })
-              .filter({ visible: true })
-              .first();
-            if (
-              await btnAceptarDialogo
-                .isVisible({ timeout: 400 })
-                .catch(() => false)
-            ) {
-              await btnAceptarDialogo.click({ timeout: 2000 }).catch(() => {});
-            }
-          }
-        }
-
-        // Si el formulario de ítem ya no está visible o el producto ya se listó en la tabla
-        const modalItemAunVisible = await dialogNuevoItem
-          .isVisible({ timeout: 100 })
+        const cerrado = await frameOrPage
+          .evaluate(() => {
+            const dlg = document.querySelector(
+              '.dijitDialog:not([style*="display: none"])',
+            );
+            return !dlg;
+          })
           .catch(() => false);
-
-        const productoEnTabla = descCorta
-          ? await frameOrPage
-              .locator(`td:has-text("${descCorta}")`)
-              .first()
-              .isVisible({ timeout: 100 })
-              .catch(() => false)
-          : false;
-
-        if (!modalItemAunVisible || productoEnTabla) {
-          this.logger.log(
-            `Ítem ${index + 1} guardado correctamente en la tabla.`,
-          );
-          break;
-        }
-
-        // Reintento controlado: sólo UNA vez si pasaron más de 4.5 segundos y el modal aún sigue abierto
-        if (!reintentoRealizado && Date.now() - inicioEsperaItem > 4500) {
-          reintentoRealizado = true;
-          this.logger.debug(
-            `Reintentando un único clic en Aceptar de ítem ${index + 1}...`,
-          );
-          await btnAceptarItem
-            .click({ force: true, timeout: 2500 })
-            .catch(() => {});
-          await frameOrPage.evaluate(clicAceptarNativo).catch(() => {});
-        }
-
-        await page.waitForTimeout(80);
+        if (cerrado) break;
+        await page.waitForTimeout(200);
       }
+      this.logger.log(`Ítem ${index + 1} guardado correctamente en la tabla.`);
     }
 
     // =========================================================================
@@ -2194,153 +1649,42 @@ export class SunatSolBotService {
       'Todos los ítems agregados con éxito. Presionando botón Continuar para avanzar...',
     );
 
-    const funcionAceptarModales = async (): Promise<boolean> => {
-      const modalUnionSelector = [
-        '.dijitDialog button:has-text("Aceptar")',
-        '.dijitDialog input[value="Aceptar"]',
-        '.dijitDialog span.dijitButtonText:has-text("Aceptar")',
-        '.dijitDialog button:has-text("Sí")',
-        '.dijitDialog button:has-text("Si")',
-        '.dijitDialog input[value="Sí"]',
-        '.dijitDialog input[value="Si"]',
-        '#dlgBtnAceptar',
-        '.dijitDialog [id*="btnAceptar" i]',
-        'button:has-text("Aceptar")',
-      ].join(', ');
+    // Clic en Continuar de ítems (#boleta.botonGrabarDocumento)
+    const btnContinuarPaso2 = frameOrPage
+      .locator(
+        '#boleta\\.botonGrabarDocumento, [widgetid="boleta.botonGrabarDocumento"], span[role="button"]:has-text("Continuar"), button:has-text("Continuar")',
+      )
+      .filter({ visible: true })
+      .first();
 
-      for (const target of [frameOrPage, page]) {
-        const modalBtn = target
-          .locator(modalUnionSelector)
-          .filter({ visible: true })
-          .first();
-        if (await modalBtn.isVisible({ timeout: 150 }).catch(() => false)) {
-          this.logger.log(
-            'Diálogo modal / alerta detectado tras ítems, aceptando automáticamente...',
-          );
-          await modalBtn.click({ force: true, timeout: 2000 }).catch(() => {});
-          await target
-            .evaluate(() => {
-              const dlgs = document.querySelectorAll(
-                '.dijitDialog, [role="dialog"]',
-              );
-              for (const dlg of Array.from(dlgs)) {
-                if (window.getComputedStyle(dlg).display === 'none') continue;
-                const btns = Array.from(
-                  dlg.querySelectorAll<HTMLElement>(
-                    'button, input[type="button"], span.dijitButtonText',
-                  ),
-                );
-                for (const b of btns) {
-                  const t = (
-                    b.textContent ||
-                    (b as HTMLInputElement).value ||
-                    ''
-                  ).trim();
-                  if (/^(aceptar|s[íi]|continuar)$/i.test(t)) {
-                    b.click();
-                    return;
-                  }
-                }
-              }
-            })
-            .catch(() => {});
-          return true;
-        }
-      }
-      return false;
-    };
+    await btnContinuarPaso2.waitFor({ state: 'visible', timeout: 10000 });
+    await btnContinuarPaso2.click({ force: true });
 
-    for (let c = 0; c < 6; c++) {
-      // 1. Revisar si hay un diálogo modal emergente (ej. ítems duplicados o advertencias de SUNAT)
-      await funcionAceptarModales();
-
-      const btnEmitir = frameOrPage
-        .getByRole('button', { name: 'Emitir' })
-        .or(frameOrPage.locator('button:has-text("Emitir"), #btnEmitir'))
-        .filter({ visible: true })
-        .first();
-      if (await btnEmitir.isVisible({ timeout: 250 }).catch(() => false)) {
-        this.logger.debug('Pantalla preliminar (Emitir) ya visible.');
-        break;
-      }
-
-      const txtObs = frameOrPage
-        .locator('#txtObservaciones, textarea[name*="observacion"]')
-        .first();
-      if (await txtObs.isVisible({ timeout: 250 }).catch(() => false)) {
-        this.logger.debug('Pantalla de observaciones ya visible.');
-        break;
-      }
-
-      const btnContinuar = frameOrPage
-        .getByRole('button', { name: /continuar/i })
-        .or(
-          frameOrPage.locator(
-            'button:has-text("Continuar"), input[value*="Continuar" i], span.dijitButtonText:has-text("Continuar"), span:has-text("Continuar"), a:has-text("Continuar"), [role="button"]:has-text("Continuar"), #btnContinuar, #botonContinuar, [id*="Continuar" i]',
-          ),
-        )
-        .filter({ visible: true })
-        .first();
-
-      const btnVisible = await btnContinuar
-        .isVisible({ timeout: 1500 })
-        .catch(() => false);
-
-      if (btnVisible) {
-        this.logger.log(
-          `Presionando Continuar tras ítems (intento ${c + 1})...`,
-        );
-        await btnContinuar
-          .click({ force: true, timeout: 3000 })
-          .catch(() => {});
-      }
-
-      // Clic DOM nativo como respaldo de Continuar
-      const fnClicContinuar = () => {
-        const els = Array.from(
-          document.querySelectorAll(
-            'button, input[type="button"], input[type="submit"], span.dijitButtonText, span.dijitButtonNode, [role="button"], a',
-          ),
-        );
-        for (const el of els) {
-          const t = (
-            el.textContent ||
-            (el as HTMLInputElement).value ||
-            ''
-          ).trim();
-          if (/^continuar$/i.test(t)) {
-            (el as HTMLElement).click();
-            return true;
-          }
-        }
-        return false;
-      };
-
-      await frameOrPage.evaluate(fnClicContinuar).catch(() => {});
-      if (frameOrPage !== page) {
-        await page.evaluate(fnClicContinuar).catch(() => {});
-      }
-
-      // Esperar reactivamente a que la vista avance o aparezca un diálogo modal
-      const inicioEsperaCont = Date.now();
-      let avanzo = false;
-      while (Date.now() - inicioEsperaCont < 3500) {
-        await funcionAceptarModales();
-        if (
-          (await btnEmitir.isVisible({ timeout: 100 }).catch(() => false)) ||
-          (await txtObs.isVisible({ timeout: 100 }).catch(() => false))
-        ) {
-          avanzo = true;
-          break;
-        }
-        await page.waitForTimeout(70);
-      }
-
-      if (avanzo) {
-        this.logger.log('Transición exitosa tras presionar Continuar.');
-        break;
-      }
+    // Si aparece diálogo modal de confirmación de SUNAT (ej. duplicados o advertencias), aceptarlo
+    const modalAviso = frameOrPage
+      .locator(
+        '.dijitDialog button:has-text("Aceptar"), .dijitDialog input[value="Aceptar"], #dlgBtnAceptar',
+      )
+      .filter({ visible: true })
+      .first();
+    if (await modalAviso.isVisible({ timeout: 1500 }).catch(() => false)) {
+      this.logger.debug(
+        'Diálogo modal de confirmación detectado tras ítems, aceptando...',
+      );
+      await modalAviso.click({ force: true }).catch(() => {});
     }
+
+    // Esperar reactivamente a que la pantalla avance a Observaciones (#docsrel.botonGrabarDocumento) o Preliminar
+    this.logger.debug(
+      'Esperando pantalla de Observaciones (#docsrel.botonGrabarDocumento)...',
+    );
+    await frameOrPage
+      .locator(
+        '#docsrel\\.botonGrabarDocumento, #boleta-preliminar\\.botonGrabarDocumento',
+      )
+      .first()
+      .waitFor({ state: 'visible', timeout: 15000 });
+    await page.waitForTimeout(500);
   }
 
   /**
@@ -2354,7 +1698,9 @@ export class SunatSolBotService {
     const frameOrPage = await this.obtenerFrameTrabajo(page);
 
     const btnEmitir = frameOrPage
-      .getByRole('button', { name: 'Emitir' })
+      .locator(
+        '#boleta-preliminar\\.botonGrabarDocumento, [widgetid="boleta-preliminar.botonGrabarDocumento"], span[role="button"]:has-text("Emitir"), button:has-text("Emitir")',
+      )
       .filter({ visible: true })
       .first();
     if (await btnEmitir.isVisible({ timeout: 800 }).catch(() => false)) {
@@ -2370,167 +1716,67 @@ export class SunatSolBotService {
       }
     }
 
-    // Aceptar cualquier modal que pudiera haberse quedado abierto
-    const modalAceptarSelector = [
-      '.dijitDialog button:has-text("Aceptar")',
-      '.dijitDialog input[value="Aceptar"]',
-      '.dijitDialog span.dijitButtonText:has-text("Aceptar")',
-      '#dlgBtnAceptar',
-    ].join(', ');
-    const modalPrev = frameOrPage
-      .locator(modalAceptarSelector)
-      .filter({ visible: true })
-      .first();
-    if (await modalPrev.isVisible({ timeout: 200 }).catch(() => false)) {
-      await modalPrev.click({ force: true, timeout: 2000 }).catch(() => {});
-    }
-
-    const btnContinuar = frameOrPage
-      .getByRole('button', { name: /continuar/i })
-      .or(
-        frameOrPage.locator(
-          'button:has-text("Continuar"), input[value*="Continuar" i], span.dijitButtonText:has-text("Continuar"), span:has-text("Continuar"), a:has-text("Continuar"), [role="button"]:has-text("Continuar"), #btnContinuar, #botonContinuar, [id*="Continuar" i]',
-        ),
+    // Clic en Continuar de Observaciones (#docsrel.botonGrabarDocumento)
+    this.logger.debug(
+      'Pulsando Continuar en Observaciones (#docsrel.botonGrabarDocumento)...',
+    );
+    const btnContinuarPaso3 = frameOrPage
+      .locator(
+        '#docsrel\\.botonGrabarDocumento, [widgetid="docsrel.botonGrabarDocumento"], span[role="button"]:has-text("Continuar"), button:has-text("Continuar")',
       )
       .filter({ visible: true })
       .first();
 
-    if (await btnContinuar.isVisible({ timeout: 2000 }).catch(() => false)) {
-      await btnContinuar.click({ force: true, timeout: 3000 }).catch(() => {});
-    }
+    await btnContinuarPaso3.waitFor({ state: 'visible', timeout: 8000 });
+    await btnContinuarPaso3.click({ force: true });
 
-    // Respaldo DOM nativo
+    // Esperar reactivamente a que la pantalla preliminar esté cargada
+    this.logger.debug(
+      'Esperando pantalla Preliminar (#boleta-preliminar.botonGrabarDocumento)...',
+    );
     await frameOrPage
-      .evaluate(() => {
-        const els = Array.from(
-          document.querySelectorAll(
-            'button, input[type="button"], input[type="submit"], span.dijitButtonText, a, [role="button"]',
-          ),
-        );
-        for (const el of els) {
-          const t = (
-            el.textContent ||
-            (el as HTMLInputElement).value ||
-            ''
-          ).trim();
-          if (/^continuar$/i.test(t)) {
-            (el as HTMLElement).click();
-            return true;
-          }
-        }
-        return false;
-      })
-      .catch(() => {});
-
-    // Esperar reactivamente a que Emitir aparezca o aceptar modal
-    const inicioWaitEmitir = Date.now();
-    while (Date.now() - inicioWaitEmitir < 12000) {
-      if (await btnEmitir.isVisible({ timeout: 150 }).catch(() => false)) {
-        break;
-      }
-      const modalWait = frameOrPage
-        .locator(modalAceptarSelector)
-        .filter({ visible: true })
-        .first();
-      if (await modalWait.isVisible({ timeout: 100 }).catch(() => false)) {
-        await modalWait.click({ force: true, timeout: 2000 }).catch(() => {});
-      }
-      await page.waitForTimeout(100);
-    }
+      .locator('#boleta-preliminar\\.botonGrabarDocumento')
+      .waitFor({ state: 'visible', timeout: 20000 });
   }
 
   /**
    * Paso 4: Confirmación en pantalla preliminar y emisión final.
    * Monitorea reactivamente la aparición del número de comprobante para retornar de inmediato.
    */
-  private async confirmarYEmitirBoleta(page: Page): Promise<{
+  private async confirmarYEmitirBoleta(
+    page: Page,
+    soloPreliminar = false,
+  ): Promise<{
     numeroComprobante: string;
     serie: string;
     correlativo: number;
   }> {
     this.logger.debug('Confirmando emisión en preliminar de comprobante...');
+    const currentFrame = await this.obtenerFrameTrabajo(page);
 
-    const inicioEsperaEmitir = Date.now();
-    const maxEsperaEmitir = 25000;
-    let emitirClickeado = false;
+    // Localizar botón oficial "Emitir" (#boleta-preliminar.botonGrabarDocumento)
+    const btnEmitir = currentFrame
+      .locator(
+        '#boleta-preliminar\\.botonGrabarDocumento, [widgetid="boleta-preliminar.botonGrabarDocumento"], span[role="button"]:has-text("Emitir"), button:has-text("Emitir")',
+      )
+      .first();
 
-    while (Date.now() - inicioEsperaEmitir < maxEsperaEmitir) {
-      const currentFrame = await this.obtenerFrameTrabajo(page);
+    await btnEmitir.waitFor({ state: 'visible', timeout: 20000 });
+    this.logger.log('Botón oficial Emitir visible y verificado.');
 
-      // Aceptar cualquier diálogo modal que pudiera bloquear la pantalla (ej. duplicados, avisos)
-      const modalAceptarSelector = [
-        '.dijitDialog button:has-text("Aceptar")',
-        '.dijitDialog input[value="Aceptar"]',
-        '.dijitDialog span.dijitButtonText:has-text("Aceptar")',
-        '#dlgBtnAceptar',
-        'button:has-text("Aceptar")',
-      ].join(', ');
-      const btnModal = currentFrame
-        .locator(modalAceptarSelector)
-        .filter({ visible: true })
-        .first();
-      if (await btnModal.isVisible({ timeout: 150 }).catch(() => false)) {
-        this.logger.log(
-          'Aceptando diálogo modal pendiente en pantalla preliminar/emisión...',
-        );
-        await btnModal.click({ force: true, timeout: 2000 }).catch(() => {});
-        await page.waitForTimeout(200);
-      }
-
-      // Botón "Emitir"
-      const btnEmitir = currentFrame
-        .getByRole('button', { name: 'Emitir' })
-        .or(
-          currentFrame.locator(
-            'button:has-text("Emitir"), input[value="Emitir"], #btnEmitir',
-          ),
-        )
-        .filter({ visible: true })
-        .first();
-
-      if (await btnEmitir.isVisible({ timeout: 300 }).catch(() => false)) {
-        this.logger.log('Botón Emitir visible. Presionando Emitir...');
-        await btnEmitir.click({ timeout: 5000 }).catch(() => {});
-        emitirClickeado = true;
-        break;
-      }
-
-      // Si aún no está visible Emitir, verificar si la pantalla sigue en Observaciones o Ítems
-      const btnContinuar = currentFrame
-        .getByRole('button', { name: /continuar/i })
-        .or(
-          currentFrame.locator(
-            'button:has-text("Continuar"), input[value*="Continuar" i], #btnContinuar',
-          ),
-        )
-        .filter({ visible: true })
-        .first();
-
-      if (await btnContinuar.isVisible({ timeout: 200 }).catch(() => false)) {
-        this.logger.debug(
-          'Pantalla previa detectada, presionando Continuar hacia Preliminar...',
-        );
-        await btnContinuar
-          .click({ force: true, timeout: 3000 })
-          .catch(() => {});
-      }
-
-      await page.waitForTimeout(150);
+    if (soloPreliminar) {
+      this.logger.log(
+        '[MODO SIMULACRO / DRY-RUN] Pantalla Preliminar alcanzada con éxito. Se omite clic en Emitir para no gastar boleta real.',
+      );
+      return {
+        numeroComprobante: 'SIMULACRO-PRELIMINAR-OK',
+        serie: 'EB01',
+        correlativo: 0,
+      };
     }
 
-    if (!emitirClickeado) {
-      const finalFrame = await this.obtenerFrameTrabajo(page);
-      const btnEmitirFinal = finalFrame
-        .getByRole('button', { name: 'Emitir' })
-        .or(
-          finalFrame.locator(
-            'button:has-text("Emitir"), input[value="Emitir"], #btnEmitir',
-          ),
-        )
-        .first();
-      await btnEmitirFinal.waitFor({ state: 'visible', timeout: 5000 });
-      await btnEmitirFinal.click({ timeout: 5000 });
-    }
+    this.logger.log('Presionando Emitir...');
+    await btnEmitir.click({ timeout: 5000 });
 
     // 2. Diálogo de confirmación: "¿Está seguro de emitir...?" -> Clic en "Aceptar"
     const inicioConfirmar = Date.now();
@@ -2653,7 +1899,14 @@ export class SunatSolBotService {
       await page.waitForTimeout(60);
     }
 
-    return await this.obtenerFrameTrabajo(page);
+    const frameFinal = await this.obtenerFrameTrabajo(page);
+    if (frameFinal && frameFinal !== page) {
+      return frameFinal;
+    }
+
+    throw new Error(
+      'No se pudo cargar el formulario de emisión SEE-SOL (iframeApplication no detectado o no interactivo).',
+    );
   }
 
   /**

@@ -39,6 +39,7 @@ export interface EmitirBoletaSolParams {
   observaciones?: string;
   timeoutMs?: number;
   headless?: boolean;
+  soloPreliminar?: boolean;
   onProgreso?: (progreso: ProgresoEmisionSol) => void;
 }
 
