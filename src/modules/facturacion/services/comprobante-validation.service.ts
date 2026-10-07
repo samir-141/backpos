@@ -145,18 +145,32 @@ export class ComprobanteValidationService {
     }
 
     // 7-8: serie activa y coherente con el tipo solicitado
-    const serie = await this.prisma.series_documentos.findFirst({
-      where: { id: dto.serieId, botica_id: boticaId },
-    });
+    const tipoEsperado = SUNAT_A_TIPO_SERIE[dto.tipoComprobante];
+    let serie = dto.serieId
+      ? await this.prisma.series_documentos.findFirst({
+          where: { id: dto.serieId, botica_id: boticaId },
+        })
+      : null;
+
+    if (!serie) {
+      serie = await this.prisma.series_documentos.findFirst({
+        where: {
+          botica_id: boticaId,
+          tipo_documento: tipoEsperado,
+          activo: true,
+        },
+        orderBy: [{ created_at: 'asc' }],
+      });
+    }
+
     if (!serie) {
       throw new NotFoundException(
-        'La serie no existe o no pertenece a la empresa',
+        'La serie no existe, no pertenece a la empresa o no hay serie activa disponible',
       );
     }
     if (!serie.activo) {
       throw new BadRequestException('La serie está inactiva');
     }
-    const tipoEsperado = SUNAT_A_TIPO_SERIE[dto.tipoComprobante];
     if (serie.tipo_documento !== tipoEsperado) {
       throw new BadRequestException(
         `La serie ${serie.serie} es de tipo ${serie.tipo_documento}; no corresponde al comprobante ${dto.tipoComprobante}`,

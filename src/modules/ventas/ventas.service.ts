@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateVentaDto } from './dto/create-venta.dto';
+import { UpdateVentaDto } from './dto/update-venta.dto';
 import { AuditService } from '../audit/audit.service';
 import { EventsGateway } from '../../socket/events.gateway';
 import { randomBytes, randomUUID } from 'crypto';
@@ -733,8 +734,33 @@ export class VentasService {
             }),
           ]);
 
-          // Generar correlativo atómico para Nota de Venta
-          let numeroComprobanteNotaVenta = `NV01-${
+          // Generar correlativo atómico según tipo de comprobante
+          let prefijoSerie = 'NV01';
+          let tipoCorrelativo = 'NOTA_VENTA';
+
+          const tcUpper = String(dto.tipo_comprobante || '').toUpperCase().trim();
+          if (
+            tcUpper === 'BOLETA_SIMPLE' ||
+            tcUpper === 'BOLETA' ||
+            tcUpper === 'BOLETA SIMPLE'
+          ) {
+            prefijoSerie = 'B001';
+            tipoCorrelativo = 'BOLETA_SIMPLE';
+          } else if (
+            tcUpper === 'BOLETA_ELECTRONICA' ||
+            tcUpper === 'BOLETA ELECTRONICA'
+          ) {
+            prefijoSerie = 'BE01';
+            tipoCorrelativo = 'BOLETA_ELECTRONICA';
+          } else if (
+            tcUpper === 'FACTURA' ||
+            tcUpper === 'FACTURA_ELECTRONICA'
+          ) {
+            prefijoSerie = 'F001';
+            tipoCorrelativo = 'FACTURA';
+          }
+
+          let numeroComprobanteFinal = `${prefijoSerie}-${
             String(venta.id)
               .replace(/[^0-9]/g, '')
               .padStart(8, '0')
@@ -742,26 +768,26 @@ export class VentasService {
           }`;
           let correlativoNum = 1;
           if (tx.correlativos?.upsert) {
-            const correlativoNv = await tx.correlativos.upsert({
+            const correlativoDoc = await tx.correlativos.upsert({
               where: {
-                botica_id_tipo: { botica_id: boticaId, tipo: 'NOTA_VENTA' },
+                botica_id_tipo: { botica_id: boticaId, tipo: tipoCorrelativo },
               },
               update: { ultimo_numero: { increment: 1 } },
               create: {
                 botica_id: boticaId,
-                tipo: 'NOTA_VENTA',
+                tipo: tipoCorrelativo,
                 ultimo_numero: 1,
               },
               select: { ultimo_numero: true },
             });
-            correlativoNum = correlativoNv.ultimo_numero;
-            numeroComprobanteNotaVenta = `NV01-${String(correlativoNum).padStart(8, '0')}`;
+            correlativoNum = correlativoDoc.ultimo_numero;
+            numeroComprobanteFinal = `${prefijoSerie}-${String(correlativoNum).padStart(8, '0')}`;
           }
 
           const snapshot = {
             version: 'a4-v1',
             venta_id: venta.id,
-            numero_comprobante: numeroComprobanteNotaVenta,
+            numero_comprobante: numeroComprobanteFinal,
             emitido_at: venta.fecha,
             tipo_comprobante: dto.tipo_comprobante,
             metodo_pago: metodoPagoNombre,
@@ -813,11 +839,11 @@ export class VentasService {
             igv: igvCalculado,
             total: totalCalculado,
             tipo_comprobante: dto.tipo_comprobante,
-            numero_comprobante: numeroComprobanteNotaVenta,
+            numero_comprobante: numeroComprobanteFinal,
             comprobante: {
-              serie: 'NV01',
+              serie: prefijoSerie,
               correlativo: correlativoNum,
-              serie_numero: numeroComprobanteNotaVenta,
+              serie_numero: numeroComprobanteFinal,
             },
             metodo_pago: metodoPagoNombre,
             comprobante_token: tokenPublico,
@@ -1229,5 +1255,117 @@ export class VentasService {
               : 'Stock adecuado'
           : 'Sin datos suficientes para proyección',
     };
+  }
+
+  async actualizarAdmin(
+    id: string,
+    boticaId: string,
+    dto: UpdateVentaDto,
+    usuarioId: string,
+  ) {
+    const venta = await this.prisma.ventas.findFirst({
+      where: { id, botica_id: boticaId, deleted_at: null },
+      include: { clientes: true },
+    });
+
+    if (!venta) {
+      throw new NotFoundException('La venta no existe o no pertenece a la botica');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Si se actualizaron datos del cliente y la venta tiene cliente_id
+      if (venta.cliente_id) {
+        await tx.clientes.update({
+          where: { id: venta.cliente_id },
+          data: {
+            nombre: dto.cliente_nombre ?? undefined,
+            tipo_documento: dto.cliente_tipo_documento ?? undefined,
+            numero_documento: dto.cliente_numero_documento ?? undefined,
+            telefono: dto.cliente_telefono ?? undefined,
+            direccion: dto.cliente_direccion ?? undefined,
+            updated_by: usuarioId,
+          },
+        });
+      } else if (dto.cliente_numero_documento || dto.cliente_nombre) {
+        // Crear cliente si antes no tenía cliente
+        const nuevoCliente = await tx.clientes.create({
+          data: {
+            botica_id: boticaId,
+            tipo_documento: dto.cliente_tipo_documento || 'DNI',
+            numero_documento: dto.cliente_numero_documento || '00000000',
+            nombre: dto.cliente_nombre || 'CLIENTE POS',
+            telefono: dto.cliente_telefono,
+            direccion: dto.cliente_direccion,
+            created_by: usuarioId,
+          },
+        });
+        await tx.ventas.update({
+          where: { id: venta.id },
+          data: { cliente_id: nuevoCliente.id, updated_by: usuarioId },
+        });
+      }
+
+      // 2. Si cambió el método de pago
+      if (dto.metodo_pago) {
+        const metodoPagoUpper = dto.metodo_pago.trim().toUpperCase();
+        let metodoPago = await tx.metodos_pago.findFirst({
+          where: {
+            botica_id: boticaId,
+            nombre: { equals: metodoPagoUpper, mode: 'insensitive' },
+            deleted_at: null,
+          },
+        });
+        if (metodoPago) {
+          await tx.pagos.updateMany({
+            where: { venta_id: venta.id, botica_id: boticaId, deleted_at: null },
+            data: {
+              metodo_pago_id: metodoPago.id,
+              referencia: metodoPagoUpper,
+              updated_by: usuarioId,
+            },
+          });
+        }
+      }
+
+      // 3. Actualizar snapshot en comprobantes_publicos si existe
+      const compPub = await tx.comprobantes_publicos.findFirst({
+        where: { venta_id: venta.id, botica_id: boticaId },
+      });
+      if (compPub && compPub.snapshot) {
+        const snap = compPub.snapshot as any;
+        if (dto.cliente_nombre || dto.cliente_numero_documento) {
+          snap.cliente = {
+            ...snap.cliente,
+            nombre: dto.cliente_nombre ?? snap.cliente?.nombre,
+            documento: dto.cliente_numero_documento
+              ? `${dto.cliente_tipo_documento || 'DNI'}: ${dto.cliente_numero_documento}`
+              : snap.cliente?.documento,
+            direccion: dto.cliente_direccion ?? snap.cliente?.direccion,
+          };
+        }
+        if (dto.metodo_pago) {
+          snap.metodo_pago = dto.metodo_pago.trim().toUpperCase();
+        }
+        await tx.comprobantes_publicos.update({
+          where: { id: compPub.id },
+          data: { snapshot: snap },
+        });
+      }
+
+      // 4. Registrar en auditoría
+      await this.auditService.registrar({
+        usuario_id: usuarioId,
+        accion: 'VENTA_EDITADA_ADMIN',
+        tabla: 'ventas',
+        botica_id: boticaId,
+        observacion: `Venta ${venta.id} editada por administrador`,
+      });
+
+      return {
+        exito: true,
+        mensaje: 'Comprobante y venta actualizados por administrador',
+        venta_id: venta.id,
+      };
+    });
   }
 }

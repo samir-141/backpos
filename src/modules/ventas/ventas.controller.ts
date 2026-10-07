@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
   Param,
   Headers,
@@ -15,6 +16,7 @@ import {
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { VentasService } from './ventas.service';
 import { CreateVentaDto } from './dto/create-venta.dto';
+import { UpdateVentaDto } from './dto/update-venta.dto';
 import { TenantGuard } from '../../auth/guards/tenant.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
@@ -112,5 +114,23 @@ export class VentasController {
     @Request() req: any,
   ) {
     return this.ventasService.anular(id, req.botica_id, req.user.id);
+  }
+
+  @Patch(':id')
+  @RequirePermissions('ventas.editar')
+  @ApiOperation({
+    summary: 'Actualizar datos de una venta (Solo Administrador)',
+  })
+  actualizar(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body() updateDto: UpdateVentaDto,
+    @Request() req: any,
+  ) {
+    return this.ventasService.actualizarAdmin(
+      id,
+      req.botica_id,
+      updateDto,
+      req.user.id,
+    );
   }
 }
