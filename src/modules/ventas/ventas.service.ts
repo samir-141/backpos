@@ -2,6 +2,7 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -499,7 +500,49 @@ export class VentasService {
             }
           }
 
-          // 5. Crear la cabecera de la venta con importes calculados por el servidor.
+          // 5. Validar fecha personalizada si fue enviada (Solo Administrador)
+          let fechaVenta = new Date();
+          if (dto.fecha) {
+            const usuarioDb = await tx.usuarios.findFirst({
+              where: {
+                id: finalUsuarioId,
+                botica_id: boticaId,
+                deleted_at: null,
+              },
+              include: { roles: true },
+            });
+            const rolNombre = (usuarioDb?.roles?.nombre || '').toUpperCase();
+            const esAdmin =
+              Boolean(usuarioDb?.es_super_admin) ||
+              rolNombre.includes('ADMIN') ||
+              rolNombre.includes('PROPIETARIO') ||
+              rolNombre === 'GERENTE';
+
+            if (!esAdmin) {
+              throw new ForbiddenException(
+                'Solo los usuarios con rol de Administrador pueden seleccionar una fecha de emisión personalizada.',
+              );
+            }
+
+            const parsedFecha = new Date(dto.fecha);
+            if (isNaN(parsedFecha.getTime())) {
+              throw new BadRequestException(
+                'La fecha de emisión personalizada no es válida.',
+              );
+            }
+
+            const ahora = new Date();
+            ahora.setMinutes(ahora.getMinutes() + 5);
+            if (parsedFecha > ahora) {
+              throw new BadRequestException(
+                'No se puede emitir un comprobante con fecha futura.',
+              );
+            }
+
+            fechaVenta = parsedFecha;
+          }
+
+          // 6. Crear la cabecera de la venta con importes calculados por el servidor.
           const venta = await tx.ventas.create({
             data: {
               botica_id: boticaId,
@@ -508,6 +551,7 @@ export class VentasService {
               cliente_id: clienteId,
               usuario_id: finalUsuarioId,
               caja_id: caja.id,
+              fecha: fechaVenta,
               subtotal: subtotalCalculado,
               descuento: 0,
               igv: igvCalculado,
@@ -738,7 +782,9 @@ export class VentasService {
           let prefijoSerie = 'NV01';
           let tipoCorrelativo = 'NOTA_VENTA';
 
-          const tcUpper = String(dto.tipo_comprobante || '').toUpperCase().trim();
+          const tcUpper = String(dto.tipo_comprobante || '')
+            .toUpperCase()
+            .trim();
           if (
             tcUpper === 'BOLETA_SIMPLE' ||
             tcUpper === 'BOLETA' ||
@@ -1269,7 +1315,9 @@ export class VentasService {
     });
 
     if (!venta) {
-      throw new NotFoundException('La venta no existe o no pertenece a la botica');
+      throw new NotFoundException(
+        'La venta no existe o no pertenece a la botica',
+      );
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -1308,7 +1356,7 @@ export class VentasService {
       // 2. Si cambió el método de pago
       if (dto.metodo_pago) {
         const metodoPagoUpper = dto.metodo_pago.trim().toUpperCase();
-        let metodoPago = await tx.metodos_pago.findFirst({
+        const metodoPago = await tx.metodos_pago.findFirst({
           where: {
             botica_id: boticaId,
             nombre: { equals: metodoPagoUpper, mode: 'insensitive' },
@@ -1317,7 +1365,11 @@ export class VentasService {
         });
         if (metodoPago) {
           await tx.pagos.updateMany({
-            where: { venta_id: venta.id, botica_id: boticaId, deleted_at: null },
+            where: {
+              venta_id: venta.id,
+              botica_id: boticaId,
+              deleted_at: null,
+            },
             data: {
               metodo_pago_id: metodoPago.id,
               referencia: metodoPagoUpper,

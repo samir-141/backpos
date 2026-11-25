@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { chromium, Browser, BrowserContext, Page, Frame } from 'playwright';
 import {
   EmitirBoletaSolParams,
@@ -322,9 +323,10 @@ export class SunatSolBotService {
             const buffer = await page.screenshot({ fullPage: true });
             screenshotBase64 = buffer.toString('base64');
 
-            // Guardar captura física en disco para inspección visual directa
+            // Guardar captura física en directorio temporal para inspección visual directa
             const logsDir = path.join(
-              process.cwd(),
+              os.tmpdir(),
+              'pos-farmacia',
               'logs',
               'sunat-sol-screenshots',
             );
@@ -357,8 +359,12 @@ export class SunatSolBotService {
             this.logger.error(
               `[DIAGNÓSTICO VISUAL] Volcado HTML de la pantalla y frames guardado en: ${htmlPath}`,
             );
-          } catch {
-            // Ignorar fallo al tomar captura
+          } catch (diskErr: unknown) {
+            const msg =
+              diskErr instanceof Error ? diskErr.message : String(diskErr);
+            this.logger.warn(
+              `No se pudo almacenar volcado visual de error en disco: ${msg}`,
+            );
           }
         }
 

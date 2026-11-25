@@ -99,11 +99,17 @@ export class FacturacionService {
         dto.serieId,
       );
 
+      const fechaEmisionFinal = dto.fechaEmision
+        ? new Date(dto.fechaEmision)
+        : ctx.venta?.fecha
+          ? new Date(ctx.venta.fecha)
+          : new Date();
+
       const data = this.mapper.map(ctx, {
         tipoComprobante: dto.tipoComprobante,
         serie: reserva.serie,
         correlativo: reserva.correlativo,
-        fechaEmision: new Date(),
+        fechaEmision: fechaEmisionFinal,
         moneda: 'PEN',
         formaPago: 'CONTADO',
       });

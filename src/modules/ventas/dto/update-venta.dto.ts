@@ -27,7 +27,9 @@ export class UpdateVentaDto {
   @IsString()
   cliente_direccion?: string;
 
-  @ApiPropertyOptional({ description: 'Método de pago (EFECTIVO, TARJETA, YAPE_PLIN, TRANSFERENCIA)' })
+  @ApiPropertyOptional({
+    description: 'Método de pago (EFECTIVO, TARJETA, YAPE_PLIN, TRANSFERENCIA)',
+  })
   @IsOptional()
   @IsString()
   metodo_pago?: string;

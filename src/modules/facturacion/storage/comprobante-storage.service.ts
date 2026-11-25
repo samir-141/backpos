@@ -1,6 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { promises as fs } from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { StorageService } from '../../storage/storage.service';
 
 /** Contrato de almacenamiento de artefactos tributarios. */
@@ -18,20 +19,51 @@ export interface FileStorageProvider {
 @Injectable()
 export class LocalFileStorageProvider implements FileStorageProvider {
   private readonly logger = new Logger(LocalFileStorageProvider.name);
-  private readonly root: string;
+  private root: string;
 
   constructor() {
-    this.root = path.resolve(
-      process.cwd(),
-      process.env.COMPROBANTES_STORAGE_DIR ?? 'storage',
+    const isServerless = Boolean(
+      process.env.VERCEL ||
+      process.env.AWS_LAMBDA_FUNCTION_NAME ||
+      process.env.LAMBDA_TASK_ROOT ||
+      process.env.NOW_REGION,
     );
+
+    if (process.env.COMPROBANTES_STORAGE_DIR) {
+      this.root = path.resolve(process.env.COMPROBANTES_STORAGE_DIR);
+    } else if (isServerless) {
+      this.root = path.join(os.tmpdir(), 'pos-farmacia', 'storage');
+      this.logger.warn(
+        `Entorno Serverless detectado. Usando directorio temporal para almacenamiento local: ${this.root}. Se recomienda configurar Supabase Storage para persistencia definitiva.`,
+      );
+    } else {
+      this.root = path.resolve(process.cwd(), 'storage');
+    }
   }
 
   async save(relativePath: string, contenido: Buffer): Promise<string> {
-    const destino = this.resolver(relativePath);
-    await fs.mkdir(path.dirname(destino), { recursive: true });
-    await fs.writeFile(destino, contenido);
-    return relativePath;
+    try {
+      const destino = this.resolver(relativePath);
+      await fs.mkdir(path.dirname(destino), { recursive: true });
+      await fs.writeFile(destino, contenido);
+      return relativePath;
+    } catch (err: unknown) {
+      const errorObj = err as NodeJS.ErrnoException;
+      if (
+        (errorObj?.code === 'EROFS' || errorObj?.code === 'EACCES') &&
+        !this.root.startsWith(os.tmpdir())
+      ) {
+        this.logger.warn(
+          `Sistema de archivos de solo lectura en ${this.root} (${errorObj.code}). Redirigiendo almacenamiento local a directorio temporal: ${os.tmpdir()}`,
+        );
+        this.root = path.join(os.tmpdir(), 'pos-farmacia', 'storage');
+        const fallbackDestino = this.resolver(relativePath);
+        await fs.mkdir(path.dirname(fallbackDestino), { recursive: true });
+        await fs.writeFile(fallbackDestino, contenido);
+        return relativePath;
+      }
+      throw err;
+    }
   }
 
   async read(relativePath: string): Promise<Buffer> {

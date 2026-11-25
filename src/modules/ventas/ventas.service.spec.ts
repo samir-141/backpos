@@ -840,6 +840,104 @@ describe('VentasService - Posventa', () => {
         }),
       });
     });
+
+    it('rechaza fecha personalizada si el usuario no tiene rol administrador', async () => {
+      const { tx } = configurarVenta({ precio: 10, cantidad: 1 });
+      tx.usuarios.findFirst.mockResolvedValue({
+        id: 'usuario-1',
+        roles: { nombre: 'CAJERO' },
+      });
+
+      await expect(
+        service.create(
+          {
+            tipo_comprobante: 'BOLETA',
+            tipo_pago: 'CONTADO',
+            metodo_pago: 'EFECTIVO',
+            fecha: '2026-11-01T10:00:00.000Z',
+            items: [
+              {
+                producto_comercial_id: 'producto-1',
+                producto_presentacion_id: 'presentacion-1',
+                presentacion_nombre: 'Unidad',
+                cantidad: 1,
+              },
+            ],
+          },
+          BOTICA_ID,
+          'sucursal-1',
+          'usuario-1',
+        ),
+      ).rejects.toThrow(
+        'Solo los usuarios con rol de Administrador pueden seleccionar una fecha de emisión personalizada.',
+      );
+    });
+
+    it('permite fecha personalizada si el usuario es administrador', async () => {
+      const { tx } = configurarVenta({ precio: 10, cantidad: 1 });
+      tx.usuarios.findFirst.mockResolvedValue({
+        id: 'usuario-1',
+        roles: { nombre: 'ADMINISTRADOR' },
+      });
+
+      const fechaElegida = '2026-11-01T10:00:00.000Z';
+      await service.create(
+        {
+          tipo_comprobante: 'BOLETA',
+          tipo_pago: 'CONTADO',
+          metodo_pago: 'EFECTIVO',
+          fecha: fechaElegida,
+          items: [
+            {
+              producto_comercial_id: 'producto-1',
+              producto_presentacion_id: 'presentacion-1',
+              presentacion_nombre: 'Unidad',
+              cantidad: 1,
+            },
+          ],
+        },
+        BOTICA_ID,
+        'sucursal-1',
+        'usuario-1',
+      );
+
+      expect(tx.ventas.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          fecha: new Date(fechaElegida),
+        }),
+      });
+    });
+
+    it('rechaza fecha personalizada futura', async () => {
+      const { tx } = configurarVenta({ precio: 10, cantidad: 1 });
+      tx.usuarios.findFirst.mockResolvedValue({
+        id: 'usuario-1',
+        roles: { nombre: 'ADMINISTRADOR' },
+      });
+
+      const fechaFutura = new Date(Date.now() + 86400000 * 5).toISOString();
+      await expect(
+        service.create(
+          {
+            tipo_comprobante: 'BOLETA',
+            tipo_pago: 'CONTADO',
+            metodo_pago: 'EFECTIVO',
+            fecha: fechaFutura,
+            items: [
+              {
+                producto_comercial_id: 'producto-1',
+                producto_presentacion_id: 'presentacion-1',
+                presentacion_nombre: 'Unidad',
+                cantidad: 1,
+              },
+            ],
+          },
+          BOTICA_ID,
+          'sucursal-1',
+          'usuario-1',
+        ),
+      ).rejects.toThrow('No se puede emitir un comprobante con fecha futura.');
+    });
   });
 
   describe('findOne', () => {

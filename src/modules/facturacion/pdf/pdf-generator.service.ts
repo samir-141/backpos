@@ -6,6 +6,7 @@ import {
 import type { TDocumentDefinitions, Content } from 'pdfmake/interfaces';
 import * as QRCode from 'qrcode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { ComprobanteSunatData } from '../domain/comprobante-data.interface';
 
 // pdfmake 0.3 (Node) no trae tipos propios y @types/pdfmake solo cubre la API
@@ -52,13 +53,35 @@ const TIPOS_COMPROBANTE: Record<string, string> = {
 };
 
 function fontsPdfmake() {
-  const base = path.join(
-    process.cwd(),
-    'node_modules',
-    'pdfmake',
-    'fonts',
-    'Roboto',
-  );
+  let base: string;
+  try {
+    const pdfmakeEntry = require.resolve('pdfmake');
+    const resolvedBase = path.join(
+      path.dirname(pdfmakeEntry),
+      '..',
+      'fonts',
+      'Roboto',
+    );
+    if (fs.existsSync(path.join(resolvedBase, 'Roboto-Regular.ttf'))) {
+      base = resolvedBase;
+    } else {
+      base = path.join(
+        process.cwd(),
+        'node_modules',
+        'pdfmake',
+        'fonts',
+        'Roboto',
+      );
+    }
+  } catch {
+    base = path.join(
+      process.cwd(),
+      'node_modules',
+      'pdfmake',
+      'fonts',
+      'Roboto',
+    );
+  }
   return {
     Roboto: {
       normal: path.join(base, 'Roboto-Regular.ttf'),

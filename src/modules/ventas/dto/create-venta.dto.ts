@@ -78,6 +78,14 @@ export class CreateVentaDto {
   @IsUUID()
   perfil_tributario_id?: string;
 
+  @ApiPropertyOptional({
+    description:
+      'Fecha personalizada de emisión de la venta/comprobante (Solo administradores). Formato ISO o YYYY-MM-DD.',
+  })
+  @IsOptional()
+  @IsString()
+  fecha?: string;
+
   @ApiProperty()
   @IsNotEmpty()
   @IsString()

@@ -10,6 +10,7 @@ import { numeroALetras } from '../facturacion/utils/numero-a-letras.util';
 import * as QRCode from 'qrcode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import * as crypto from 'crypto';
 
 import { A4Template } from './templates/a4.template';
@@ -28,13 +29,35 @@ const URLResolver = require('pdfmake/js/URLResolver').default;
 const virtualfs = require('pdfmake/js/virtual-fs').default;
 
 function fontsPdfmake() {
-  const base = path.join(
-    process.cwd(),
-    'node_modules',
-    'pdfmake',
-    'fonts',
-    'Roboto',
-  );
+  let base: string;
+  try {
+    const pdfmakeEntry = require.resolve('pdfmake');
+    const resolvedBase = path.join(
+      path.dirname(pdfmakeEntry),
+      '..',
+      'fonts',
+      'Roboto',
+    );
+    if (fs.existsSync(path.join(resolvedBase, 'Roboto-Regular.ttf'))) {
+      base = resolvedBase;
+    } else {
+      base = path.join(
+        process.cwd(),
+        'node_modules',
+        'pdfmake',
+        'fonts',
+        'Roboto',
+      );
+    }
+  } catch {
+    base = path.join(
+      process.cwd(),
+      'node_modules',
+      'pdfmake',
+      'fonts',
+      'Roboto',
+    );
+  }
   return {
     Roboto: {
       normal: path.join(base, 'Roboto-Regular.ttf'),
@@ -49,13 +72,29 @@ function fontsPdfmake() {
 export class ComprobantesImpresionService implements OnModuleInit {
   private tempDir: string;
   private readonly logger = new Logger(ComprobantesImpresionService.name);
+  private readonly memoryStore = new Map<
+    string,
+    { buffer: Buffer; expiresAt: number }
+  >();
+  private readonly CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutos
+  private readonly MAX_CACHE_ITEMS = 200;
 
   constructor(private readonly prisma: PrismaService) {
-    this.tempDir = path.join(process.cwd(), 'temp');
+    this.tempDir = path.join(os.tmpdir(), 'pos-farmacia', 'temp');
   }
 
   onModuleInit() {
-    fs.mkdirSync(this.tempDir, { recursive: true });
+    try {
+      if (!fs.existsSync(this.tempDir)) {
+        fs.mkdirSync(this.tempDir, { recursive: true });
+      }
+      this.logger.log(`Directorio temporal inicializado en: ${this.tempDir}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Aviso: No se pudo crear el directorio temporal en disco (${this.tempDir}): ${msg}. Operando en modo memoria caché (Serverless compatible).`,
+      );
+    }
   }
 
   async depurarImpresion(
@@ -372,57 +411,99 @@ export class ComprobantesImpresionService implements OnModuleInit {
     const docDef = templateInstance.render(printData);
     const pdfBuffer = await this.renderPdf(docDef);
 
-    // 10. Guardar archivo temporal en disco
+    // 10. Guardar en memoria caché (para compatibilidad Serverless y cero I/O de disco)
     const filename = `${crypto.randomUUID()}.pdf`;
-    const filePath = path.join(this.tempDir, filename);
-    await fs.promises.writeFile(filePath, pdfBuffer);
+    const expiresAt = Date.now() + this.CACHE_TTL_MS;
+    this.memoryStore.set(filename, { buffer: pdfBuffer, expiresAt });
+    this.limpiarMemoriaExpirada();
 
-    // 11. Programar borrado automático del archivo físico a los 5 minutos
-    setTimeout(
-      () => {
+    // 11. Intentar persistencia secundaria en disco temporal (opcional; no bloquea si falla en serverless)
+    try {
+      if (!fs.existsSync(this.tempDir)) {
+        fs.mkdirSync(this.tempDir, { recursive: true });
+      }
+      const filePath = path.join(this.tempDir, filename);
+      await fs.promises.writeFile(filePath, pdfBuffer);
+
+      // Programar borrado automático del archivo físico
+      setTimeout(() => {
         fs.unlink(filePath, (err) => {
           if (err && err.code !== 'ENOENT') {
-            console.error(
-              `Error al eliminar archivo PDF temporal ${filename}:`,
-              err,
+            this.logger.debug(
+              `Limpieza de archivo temporal ${filename}: ${err.message}`,
             );
           }
         });
-      },
-      5 * 60 * 1000,
-    );
+      }, this.CACHE_TTL_MS);
+    } catch (diskErr: unknown) {
+      const msg = diskErr instanceof Error ? diskErr.message : String(diskErr);
+      this.logger.warn(
+        `No se pudo persistir archivo temporal en disco (${filename}): ${msg}. Se servirá exclusivamente desde memoria.`,
+      );
+    }
 
     return filename;
   }
 
   private async renderPdf(docDef: any): Promise<Buffer> {
-    return new Promise(async (resolve, reject) => {
+    return new Promise((resolve, reject) => {
       try {
         const printer = new PdfPrinter(
           fontsPdfmake(),
           virtualfs,
           new URLResolver(),
         );
-        const pdfDoc = await printer.createPdfKitDocument(docDef);
+        const pdfDoc = printer.createPdfKitDocument(docDef);
         const chunks: Buffer[] = [];
         pdfDoc.on('data', (chunk: Buffer) => chunks.push(chunk));
         pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
-        pdfDoc.on('error', (err) => reject(err));
+        pdfDoc.on('error', (err: Error) => reject(err));
         pdfDoc.end();
-      } catch (err) {
-        reject(err);
+      } catch (err: unknown) {
+        reject(err instanceof Error ? err : new Error(String(err)));
       }
     });
   }
 
   async obtenerArchivoTemporal(filename: string): Promise<Buffer> {
-    const filePath = path.join(this.tempDir, filename);
+    const sanitized = path.basename(filename);
+    if (!/^[a-zA-Z0-9_-]+\.pdf$/i.test(sanitized) || sanitized !== filename) {
+      throw new NotFoundException('Identificador de archivo temporal inválido');
+    }
+
+    // 1. Buscar en memoria caché (inmediato, sin acceso a disco)
+    const cached = this.memoryStore.get(sanitized);
+    if (cached) {
+      if (Date.now() <= cached.expiresAt) {
+        return cached.buffer;
+      }
+      this.memoryStore.delete(sanitized);
+    }
+
+    // 2. Fallback a disco temporal si no está en memoria
     try {
+      const filePath = path.join(this.tempDir, sanitized);
       return await fs.promises.readFile(filePath);
-    } catch (err) {
+    } catch {
       throw new NotFoundException(
         'El archivo de impresión temporal ya no está disponible o ha expirado',
       );
+    }
+  }
+
+  private limpiarMemoriaExpirada(): void {
+    const now = Date.now();
+    for (const [key, val] of this.memoryStore.entries()) {
+      if (now > val.expiresAt) {
+        this.memoryStore.delete(key);
+      }
+    }
+    if (this.memoryStore.size > this.MAX_CACHE_ITEMS) {
+      const keys = Array.from(this.memoryStore.keys());
+      const toDelete = keys.slice(0, keys.length - this.MAX_CACHE_ITEMS);
+      for (const k of toDelete) {
+        this.memoryStore.delete(k);
+      }
     }
   }
 

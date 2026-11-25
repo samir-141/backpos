@@ -1,4 +1,4 @@
-import { IsIn, IsOptional, IsUUID } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
@@ -27,4 +27,11 @@ export class EmitirComprobanteDto {
   @IsOptional()
   @IsUUID('4')
   perfilTributarioId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Fecha de emisión personalizada (ISO o YYYY-MM-DD)',
+  })
+  @IsOptional()
+  @IsString()
+  fechaEmision?: string;
 }
